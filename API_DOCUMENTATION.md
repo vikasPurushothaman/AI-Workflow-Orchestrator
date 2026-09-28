@@ -207,6 +207,7 @@ For each applicable case, record concrete input/action and expected status/body/
 
 | Date | Change | Verification |
 | --- | --- | --- |
+| 2026-09-28 | Task6.13: added nullable frozen-snapshot `max_steps` to every `GET /runs` summary item | Verified 2026-09-28: RunQueryTest serialization (unit, pass) and RunQueryMySqlTest list projection/cap/null assertions (real MySQL via Testcontainers, pass); evidence in `docs/phase6-verification.txt` |
 | 2026-09-25 | Created documentation structure; no routes implemented | Checked that no example route is presented as implemented |
 
 | 2026-09-25 | Task 2.4: three health probes and scaffold security/error behavior | 23 HTTP tests and packaged smoke check passed; MySQL readiness remains 2.9 |
@@ -1011,11 +1012,11 @@ curl -H "Authorization: Bearer $RELAY_DEMO_TOKEN" "http://localhost:8080/runs?wo
 
 HTTP200 (IDs/times illustrative):
 ```json
-{"runs":[{"run_id":"run_example2","workflow_id":"wf_expense_approval","status":"waiting_approval","trigger_type":"manual","current_node_id":"approve_large","steps_executed":2,"created_at":"2026-09-28T10:00:02.123456Z","started_at":"2026-09-28T10:00:02.300000Z","finished_at":null}],
+{"runs":[{"run_id":"run_example2","workflow_id":"wf_expense_approval","status":"waiting_approval","trigger_type":"manual","current_node_id":"approve_large","steps_executed":2,"max_steps":20,"created_at":"2026-09-28T10:00:02.123456Z","started_at":"2026-09-28T10:00:02.300000Z","finished_at":null}],
  "next_cursor":"MTc1OTA1MzYwMjEyMzQ1NjpydW5fZXhhbXBsZTI"}
 ```
 
-Each item has exactly these nine fields: strings `run_id`, `workflow_id`, `status`, `trigger_type` (`manual`/`webhook`); nullable string `current_node_id` (next/active node; null once finished at an end node); integer `steps_executed`; UTC ISO8601 `created_at` and nullable `started_at`/`finished_at` (null means not started/not finished). `next_cursor` is null on the last page — including when the final page is exactly full. No total count is provided.
+Each item has exactly these ten fields: strings `run_id`, `workflow_id`, `status`, `trigger_type` (`manual`/`webhook`); nullable string `current_node_id` (next/active node; null once finished at an end node); integer `steps_executed`; nullable integer `max_steps` read from the frozen per-run definition snapshot; UTC ISO8601 `created_at` and nullable `started_at`/`finished_at` (null means not started/not finished). `max_steps` is normally present for valid accepted runs; null is returned truthfully for legacy/corrupt snapshots that lack the limit. `next_cursor` is null on the last page — including when the final page is exactly full. No total count is provided.
 
 **Continuation semantics:** keyset paging from the last returned row. Runs accepted after the first page are newer than the cursor, so they never appear in or shift later pages; reload the first page (no cursor) to see them. A run's status can change between page reads, so a status-filtered walk reflects each page's read time. Runs are never deleted, so pages have no gaps.
 
@@ -1044,7 +1045,7 @@ HTTP200 for a run stopped by the step cap (IDs/times illustrative):
  "steps_next_after":null}
 ```
 
-Run fields: the nine list fields plus nullable integer `max_steps` (from the run's frozen snapshot, so later workflow edits do not change it); nullable `error` object `{code, node_id}` for engine-terminated runs (for example `max_steps`, and the node that could not be admitted); `cancel_requested_at`, `cancel_requested_by` (`demo-operator`) and `cancellation_reason` (`operator_cancelled` or `approval_rejected`), all null when not cancelled; `steps` and `steps_next_after`.
+Run fields: the ten list fields (including `max_steps` from the frozen snapshot, so later workflow edits do not change it) plus nullable `error` object `{code, node_id}` for engine-terminated runs (for example `max_steps`, and the node that could not be admitted); `cancel_requested_at`, `cancel_requested_by` (`demo-operator`) and `cancellation_reason` (`operator_cancelled` or `approval_rejected`), all null when not cancelled; `steps` and `steps_next_after`.
 
 Step fields: `sequence` (positive, gap-free per run; loop visits get new sequences), `node_id`, `node_type`, `status` (`running`, `waiting`, `succeeded`, `failed`, `cancelled`), nullable `wait_reason` (`delay`, `retry`, `approval`; only while waiting), `attempt_count` (prepared handler invocations for this visit, including retries, schema repair and crash recovery; every executed node has at least1, a delay wake-up or approval decision does not add one, and0 only means the first invocation has not been prepared), nullable `selected_next_node_id` (the branch actually taken; null at an end node or when unfinished), nullable `resume_at`, `started_at`, `finished_at`, `duration_ms`. A queued run returns `"steps":[]`.
 
@@ -1108,6 +1109,7 @@ Limits: a step page (≤500 steps) returns all attempts for those steps; attempt
 | Authentication | No token, wrong token, Basic scheme on both routes | 401 | RunQueryMySqlTest.routesRequireManagementAuthentication | Pass |
 | Ordering and ties | Five runs across two workflows, two forced to identical `created_at` | Matches `created_at DESC, run_id DESC` exactly | listFiltersAndPagesStablyServerSide | Pass |
 | Filters | workflow only; workflow+status (cancelled, queued); unknown workflow; empty status | Exact subsets; unknown → `{"runs":[],"next_cursor":null}`; empty = unfiltered | same | Pass |
+| Frozen cap in list | Valid snapshot and a legacy/corrupt snapshot without `limits.max_steps` | `max_steps` is the frozen cap or null; all existing fields unchanged | same; RunQueryTest serialization | Pending task6.13 verification |
 | Paging | limit1 walk; limit equal to count | Complete, disjoint, ordered; exact-fit page has null cursor | same | Pass |
 | Concurrent insert | New run accepted between page 1 and page 2 | Page 2 continues without duplicate/shift; new run appears on a fresh first page | same | Pass |
 | Invalid list input | limit 0/101/x, status `pending`, repeated status, bad/garbage/far-future cursor, unknown param, 129-char workflow | 400 `invalid_input` | same + RunQueryTest | Pass |

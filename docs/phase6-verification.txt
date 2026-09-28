@@ -192,3 +192,42 @@ Limitations
 16. Final full backend regression after all Phase6 changes:
     ./gradlew --gradle-user-home .gradle/user-home --no-daemon --offline test bootJar testcontainersTest
     exit 0, BUILD SUCCESSFUL — 223 unit and 32 real-MySQL tests, 0 skipped/failed.
+
+
+Task 6.13 — Phase6 review corrections (2026-09-28, complete)
+---------------------------------------------------------
+
+Implemented four review corrections: stale approval actions are disabled;
+unknown cancellation waits for a read that started after the command and never
+automatically resends; trace continuation is strictly advancing/bounded and an
+incomplete trace is reported rather than displayed as complete; GET /runs adds
+the frozen-snapshot max_steps field and history displays count/cap. A fifth
+route-transition issue found by the new cancellation test was fixed by keying
+the cancellation control to run_id. useResource now queues one requested
+refresh behind an in-flight poll so mutation reconciliation cannot be dropped.
+
+Commands and actual results:
+
+1. Focused backend RunQueryTest: PASS.
+2. ./gradlew --gradle-user-home .gradle/user-home --no-daemon --offline test bootJar
+   PASS: BUILD SUCCESSFUL; 224 unit tests, 0 failures/errors/skips; packaged jar built.
+3. npm test: PASS 58/58.
+4. npm run build: PASS; TypeScript and Vite production build clean.
+5. npx playwright test: PASS 27/27, including stale approval recovery,
+   post-command cancellation reconciliation, explicit incomplete trace and
+   run-history cap display.
+6. The 13 named document consistency scripts: all exit 0.
+7. git diff --check: PASS.
+8. ./gradlew --gradle-user-home .gradle/user-home --no-daemon --offline testcontainersTest
+   BLOCKED before tests: 9 suite initialization errors from
+   DockerClientProviderStrategy because Docker was unavailable. `df -h .`
+   reported the data volume at 100% with about 292 MiB free. The task remains
+   open; the changed MySQL projection test has not been counted as passing.
+9. Rerun after the disk was freed (df: 15 GiB available; Docker 29.4.3):
+   ./gradlew --gradle-user-home .gradle/user-home --no-daemon --offline test bootJar testcontainersTest
+   exit 0, BUILD SUCCESSFUL in 1m 56s. test/bootJar UP-TO-DATE (inputs
+   unchanged since step 2's pass; 224 unit, 0 failures). testcontainersTest
+   executed: 32 real-MySQL tests across 9 suites, 0 skipped/failures/errors.
+   RunQueryMySqlTest (4/4) includes the GET /runs max_steps=1 projection and
+   the null max_steps result after JSON_REMOVE of the snapshot cap.
+   Task 6.13 closed.

@@ -14,9 +14,9 @@ type ItemState =
   | { phase: 'unknown'; decision: Decision; reconciled: boolean };
 type Notice = { id: string; runId: string; text: string; tone: 'ok' | 'warn' | 'error' };
 
-function Item({ a, state, focused, onStart, onCancel, onConfirm }: {
+function Item({ a, state, focused, stale, onStart, onCancel, onConfirm }: {
   a: Approval; state: ItemState | undefined; focused: boolean;
-  onStart: (d: Decision) => void; onCancel: () => void; onConfirm: (d: Decision) => void;
+  stale: boolean; onStart: (d: Decision) => void; onCancel: () => void; onConfirm: (d: Decision) => void;
 }) {
   const approveRef = useRef<HTMLButtonElement>(null), rejectRef = useRef<HTMLButtonElement>(null), itemRef = useRef<HTMLLIElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
@@ -24,7 +24,7 @@ function Item({ a, state, focused, onStart, onCancel, onConfirm }: {
   useEffect(() => { if (confirming) confirmRef.current?.focus(); }, [confirming]);
   const last = useRef<Decision>('approve');
   useEffect(() => { if (focused) itemRef.current?.scrollIntoView({ block: 'center' }); }, [focused]);
-  const blocked = state?.phase === 'sending' || (state?.phase === 'unknown' && !state.reconciled);
+  const blocked = stale || state?.phase === 'sending' || (state?.phase === 'unknown' && !state.reconciled);
   const close = () => { onCancel(); requestAnimationFrame(() => (last.current === 'approve' ? approveRef : rejectRef).current?.focus()); };
   const label = `${a.node_id} in run ${a.run_id}`;
   return <li ref={itemRef} className={`approval${focused ? ' focused' : ''}`} aria-label={`Approval ${a.id}`}
@@ -41,10 +41,11 @@ function Item({ a, state, focused, onStart, onCancel, onConfirm }: {
     </div>
     {state?.phase === 'unknown' && <p className="result warn" role="status">Decision outcome unknown — your {state.decision} request may have been saved.
       {state.reconciled ? ' The request still shows as pending. You may decide again; it will conflict if the first request was saved.' : ' Waiting for fresh data before allowing another decision.'}</p>}
+    {stale && <p className="result warn" role="status">Decisions are disabled until the approval list refreshes successfully.</p>}
     {state?.phase === 'confirm' || state?.phase === 'sending'
       ? <div className="confirm" role="group" aria-label={`Confirm ${state.decision} for ${label}`}>
         <p>{state.decision === 'approve' ? `Approve “${a.node_id}” in run ${a.run_id}? The run will resume.` : `Reject “${a.node_id}” in run ${a.run_id}? This ends the run as cancelled.`}</p>
-        <button ref={confirmRef} type="button" className={state.decision === 'reject' ? 'danger' : ''} disabled={state.phase === 'sending'} onClick={() => onConfirm(state.decision)}>
+        <button ref={confirmRef} type="button" className={state.decision === 'reject' ? 'danger' : ''} disabled={stale || state.phase === 'sending'} onClick={() => onConfirm(state.decision)}>
           {state.phase === 'sending' ? 'Saving…' : state.decision === 'approve' ? 'Confirm approve' : 'Confirm reject'}<span className="sr-only"> for {label}</span></button>
         <button type="button" className="secondary" disabled={state.phase === 'sending'} onClick={close}>Cancel<span className="sr-only"> decision for {label}</span></button>
       </div>
@@ -107,7 +108,7 @@ export function ApprovalsPage() {
       return <>
         {focusMissing && <p className="notice-inline">Request <code>{focus}</code> is not pending. It may have been decided or closed — check its run trace for the recorded outcome.</p>}
         {rows.length === 0 ? <section className="notice"><h2>No pending approvals.</h2></section>
-          : <ul className="approvals">{rows.map(a => <Item key={a.id} a={a} state={items[a.id]} focused={a.id === focus}
+          : <ul className="approvals">{rows.map(a => <Item key={a.id} a={a} state={items[a.id]} focused={a.id === focus} stale={!!approvals.error}
             onStart={d => setItems(s => ({ ...s, [a.id]: { phase: 'confirm', decision: d } }))}
             onCancel={() => setItems(s => { const n = { ...s }; delete n[a.id]; return n; })}
             onConfirm={d => void decide(a, d)} />)}</ul>}

@@ -104,8 +104,13 @@ class RunQueryMySqlTest extends MySqlIntegrationSupport {
             assertThat(first.get("next_cursor").isNull()).isTrue();
             assertThat(ids(first)).isEqualTo(sql.queryForList("SELECT run_id FROM runs ORDER BY created_at DESC,run_id DESC LIMIT 25",String.class));
             var row=first.get("runs").get(0);
-            for(String f:new String[]{"run_id","workflow_id","status","trigger_type","current_node_id","steps_executed","created_at","started_at","finished_at"})assertThat(row.has(f)).as(f).isTrue();
-            assertThat(row.size()).isEqualTo(9);
+            for(String f:new String[]{"run_id","workflow_id","status","trigger_type","current_node_id","steps_executed","max_steps","created_at","started_at","finished_at"})assertThat(row.has(f)).as(f).isTrue();
+            assertThat(row.size()).isEqualTo(10);assertThat(row.get("max_steps").asLong()).isEqualTo(1);
+
+            // The projection remains truthful for a legacy/corrupt snapshot without a cap.
+            sql.update("UPDATE runs SET definition_snapshot=JSON_REMOVE(definition_snapshot,'$.limits.max_steps') WHERE run_id=?",row.get("run_id").asString());
+            var withoutCap=ok("/runs?limit=100").get("runs");
+            for(var candidate:withoutCap)if(candidate.get("run_id").asString().equals(row.get("run_id").asString()))assertThat(candidate.get("max_steps").isNull()).isTrue();
 
             String both="&workflow_id="+wfA;
             assertThat(all(both,1)).isEqualTo(expected.stream().filter(aRuns::contains).toList());

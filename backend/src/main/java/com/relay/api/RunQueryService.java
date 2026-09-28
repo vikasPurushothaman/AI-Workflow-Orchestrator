@@ -21,7 +21,7 @@ public class RunQueryService {
     public static final int DEFAULT_LIMIT=25, MAX_LIMIT=100, DEFAULT_STEPS_LIMIT=500, MAX_STEPS_LIMIT=500;
     static final Set<String> STATUSES=Set.of("queued","running","waiting_approval","succeeded","failed","cancelled");
     public record RunSummary(String run_id,String workflow_id,String status,String trigger_type,String current_node_id,
-        long steps_executed,Instant created_at,Instant started_at,Instant finished_at) {}
+        long steps_executed,Long max_steps,Instant created_at,Instant started_at,Instant finished_at) {}
     public record RunPage(List<RunSummary> runs,String next_cursor) {}
     public record RunError(String code,String node_id) {}
     public record AttemptView(long attempt_no,String status,String cause,JsonNode error,JsonNode output,String provider,String model,
@@ -56,10 +56,11 @@ public class RunQueryService {
             where.add("(created_at<? OR (created_at=? AND run_id<?))");args.addAll(List.of(at,at,q.cursor().runId()));
         }
         args.add(q.limit()+1);
-        var rows=sql.query("SELECT run_id,workflow_id,status,trigger_type,current_node_id,steps_executed,created_at,started_at,finished_at FROM runs"
+        var rows=sql.query("SELECT run_id,workflow_id,status,trigger_type,current_node_id,steps_executed,"
+            +"CAST(JSON_EXTRACT(definition_snapshot,'$.limits.max_steps') AS SIGNED) AS max_steps,created_at,started_at,finished_at FROM runs"
             +(where.isEmpty()?"":" WHERE "+String.join(" AND ",where))+" ORDER BY created_at DESC,run_id DESC LIMIT ?",
             (rs,n)->new RunSummary(rs.getString("run_id"),rs.getString("workflow_id"),rs.getString("status"),rs.getString("trigger_type"),
-                rs.getString("current_node_id"),rs.getLong("steps_executed"),time(rs,"created_at"),time(rs,"started_at"),time(rs,"finished_at")),args.toArray());
+                rs.getString("current_node_id"),rs.getLong("steps_executed"),nullableLong(rs,"max_steps"),time(rs,"created_at"),time(rs,"started_at"),time(rs,"finished_at")),args.toArray());
         if(rows.size()<=q.limit())return new RunPage(rows,null);
         var page=rows.subList(0,q.limit());var last=page.getLast();
         return new RunPage(List.copyOf(page),encode(new Cursor(last.created_at(),last.run_id())));

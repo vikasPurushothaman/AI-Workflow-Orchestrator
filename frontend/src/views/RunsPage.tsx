@@ -58,7 +58,7 @@ export function RunsPage() {
               <td data-label="Accepted"><Time value={r.created_at} /></td>
               <td data-label="Started"><Time value={r.started_at} missing="Not started" /></td>
               <td data-label="Finished"><Time value={r.finished_at} missing="Not finished" /></td>
-              <td data-label="Steps">{r.steps_executed}</td>
+              <td data-label="Steps">{r.steps_executed} of {r.max_steps ?? 'unknown'}</td>
             </tr>)}</tbody>
           </table></div>}
         <nav className="pager" aria-label="Run pages">

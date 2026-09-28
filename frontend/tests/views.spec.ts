@@ -129,6 +129,7 @@ test('6.8 run history filters go to the server, paging works, invalid filter sen
   expect(seen).toEqual([]);
   await page.getByRole('button', { name: 'Reset filters' }).first().click();
   await expect(page.getByRole('link', { name: 'run_new' })).toBeVisible();
+  await expect(page.getByRole('row', { name: /run_new/ })).toContainText('1 of 10');
   await expect(page.getByRole('table', { name: /Runs, newest first/ })).toContainText('Not finished');
   await page.getByRole('button', { name: 'Next' }).click();
   await expect(page.getByRole('link', { name: 'run_old' })).toBeVisible();
@@ -216,6 +217,55 @@ test('6.8 cancellation: confirm, Escape, exactly one POST, 202 notice and 409 re
   expect(posts).toBe(2);
 });
 
+test('6.8 unknown cancellation blocks repeats until a post-command read reconciles', async ({ page }) => {
+  const posts: Record<string, number> = { active: 0, pending: 0, terminal: 0 };
+  await mock(page, async (route, url, method) => {
+    const match = /^\/runs\/run_(active|pending|terminal)(?:\/cancel)?$/.exec(url.pathname);
+    if (!match) return;
+    const kind = match[1];
+    if (method === 'POST') { posts[kind]++; await route.abort('failed'); return; }
+    if (posts[kind] > 0) await new Promise(resolve => setTimeout(resolve, 500));
+    const extra = posts[kind] === 0 ? {} : kind === 'pending'
+      ? { cancel_requested_at: T, cancel_requested_by: 'demo-operator', cancellation_reason: 'operator_cancelled' }
+      : kind === 'terminal' ? { status: 'succeeded', finished_at: T } : {};
+    await json(route, run(`run_${kind}`, extra));
+  });
+  await connect(page, '/console/runs/run_active');
+  for (const kind of ['active', 'pending', 'terminal'] as const) {
+    if (kind !== 'active') {
+      await page.goto(`/console/runs/run_${kind}`);
+      await page.getByLabel('Management token').fill('view-token');
+      await page.getByLabel('Management token').press('Enter');
+    }
+    await expect(page.getByRole('button', { name: 'Cancel run' })).toBeVisible();
+    await page.getByRole('button', { name: 'Cancel run' }).click();
+    await page.getByRole('button', { name: 'Confirm cancel' }).click();
+    await expect(page.getByText(/Cancellation outcome unknown/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cancel run' })).toHaveCount(0);
+    if (kind === 'active') {
+      await expect(page.getByText(/You may deliberately try again/)).toBeVisible({ timeout: 4_000 });
+      await page.getByRole('button', { name: 'Cancel run' }).click();
+      await page.getByRole('button', { name: 'Confirm cancel' }).click();
+      await expect.poll(() => posts.active).toBe(2);
+    } else {
+      await expect(page.getByText(/Cancellation outcome reconciled/)).toBeVisible({ timeout: 4_000 });
+      await expect(page.getByRole('button', { name: 'Cancel run' })).toHaveCount(0);
+    }
+  }
+  expect(posts).toEqual({ active: 2, pending: 1, terminal: 1 });
+});
+
+test('6.9 invalid trace continuation is reported instead of showing a partial trace', async ({ page }) => {
+  await mock(page, async (route, url) => {
+    if (url.pathname !== '/runs/run_bad_pages') return;
+    await json(route, run('run_bad_pages', { steps: [step(url.search ? 2 : 1)], steps_next_after: 1 }));
+  });
+  await connect(page, '/console/runs/run_bad_pages');
+  await expect(page.getByRole('heading', { name: 'Could not load run' })).toBeVisible();
+  await expect(page.getByText(/trace is incomplete/)).toBeVisible();
+  await expect(page.locator('.trace-row')).toHaveCount(0);
+});
+
 test('6.10 approvals: focus, approve once, reject wording, conflict and unknown outcome without resend', async ({ page }) => {
   let pending = [approval('apr_1', 'run_1', 'Refund <b>$250</b>\nsecond line'), approval('apr_2', 'run_2'), approval('apr_3', 'run_3'), approval('apr_4', 'run_4')];
   const posts: string[] = [];
@@ -272,6 +322,30 @@ test('6.10 approvals: focus, approve once, reject wording, conflict and unknown 
   await page.goto('/console/approvals?focus=apr_gone');
   await page.getByLabel('Management token').fill('view-token'); await page.getByLabel('Management token').press('Enter');
   await expect(page.getByText(/is not pending/)).toBeVisible();
+});
+
+test('6.10 stale approval data disables actions and an open confirmation until recovery', async ({ page }) => {
+  let fail = false, posts = 0;
+  await mock(page, async (route, url, method) => {
+    if (url.pathname === '/approvals' && method === 'GET') {
+      if (fail) await json(route, { error: {} }, 503); else await json(route, [approval('apr_stale', 'run_stale')]);
+      return;
+    }
+    if (url.pathname === '/approvals/apr_stale/approve' && method === 'POST') { posts++; await json(route, { run_id: 'run_stale', status: 'running' }); }
+  });
+  await connect(page, '/console/approvals');
+  const item = page.getByRole('listitem', { name: 'Approval apr_stale' });
+  await item.getByRole('button', { name: /^Approve/ }).click();
+  fail = true;
+  await page.getByRole('button', { name: 'Refresh' }).click();
+  await expect(page.getByText(/Decisions are disabled until/)).toBeVisible();
+  await expect(item.getByRole('button', { name: /Confirm approve/ })).toBeDisabled();
+  expect(posts).toBe(0);
+  fail = false;
+  await page.getByRole('button', { name: 'Refresh' }).click();
+  await expect(item.getByRole('button', { name: /Confirm approve/ })).toBeEnabled();
+  await item.getByRole('button', { name: /Confirm approve/ }).click();
+  await expect.poll(() => posts).toBe(1);
 });
 
 test('6.10/6.11 empty inbox, first-load failure with Retry, and 401 during polling disconnects', async ({ page }) => {

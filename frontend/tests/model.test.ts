@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ApiError } from '../src/api.ts';
-import { cancellationText, formatDuration, formatTime, formatTokens, mergeRunPages, nodeEdges, parseApprovals, parseRun, parseRunPage,
+import { cancellationText, formatDuration, formatTime, formatTokens, loadRunTrace, mergeRunPages, nodeEdges, parseApprovals, parseRun, parseRunPage,
   parseWorkflow, parseWorkflows, runFilters, runsQuery, statusLabel } from '../src/model.ts';
 import { backoffDelay, isPermanent, nextDelay } from '../src/polling.ts';
 
@@ -26,7 +26,8 @@ test('workflow detail requires definition and never needs a secret value', () =>
 });
 test('run page and run detail parse; unknown statuses are rejected', () => {
   const page = parseRunPage({ runs: [run([])], next_cursor: 'c' });
-  assert.equal(page.runs[0].run_id, 'r'); assert.equal(page.next_cursor, 'c');
+  assert.equal(page.runs[0].run_id, 'r'); assert.equal(page.runs[0].max_steps, 5); assert.equal(page.next_cursor, 'c');
+  assert.equal(parseRunPage({ runs: [{ ...run([]), max_steps: null }], next_cursor: null }).runs[0].max_steps, null);
   format(() => parseRunPage({ runs: [{ ...run([]), status: 'paused' }], next_cursor: null }));
   const r = parseRun(run([step(1, { status: 'waiting', attempts: [{ attempt_no: 1, status: 'uncertain', cause: 'recovery', error: { code: 'unknown_effect' }, output: null,
     provider: null, model: null, tokens_prompt: null, tokens_completion: null, started_at: 'x', finished_at: null, duration_ms: null }],
@@ -39,6 +40,23 @@ test('pages merge by sequence without duplicates and keep last continuation', ()
   const merged = mergeRunPages([parseRun(run([step(1), step(2)], 2)), parseRun(run([step(2), step(3)], null))]);
   assert.deepEqual(merged.steps.map(s => s.sequence), [1, 2, 3]); assert.equal(merged.steps_next_after, null);
   format(() => mergeRunPages([]));
+});
+test('trace loader completes pages and rejects unsafe continuations', async () => {
+  const paths: string[] = [];
+  const complete = await loadRunTrace('r', async path => {
+    paths.push(path);
+    return paths.length === 1 ? run([step(1)], 1) : run([step(2)], null);
+  });
+  assert.deepEqual(paths, ['/runs/r', '/runs/r?steps_after=1']);
+  assert.deepEqual(complete.steps.map(s => s.sequence), [1, 2]);
+
+  await assert.rejects(() => loadRunTrace('r', async path => path.includes('?') ? run([step(2)], 1) : run([step(1)], 1)), /trace is incomplete/);
+  await assert.rejects(() => loadRunTrace('r', async path => path.includes('?') ? run([step(3)], 1) : run([step(1)], 2)), /trace is incomplete/);
+  await assert.rejects(() => loadRunTrace('r', async () => run([step(1)], 1), { maxPages: 1 }), /trace is incomplete/);
+
+  const controller = new AbortController(); controller.abort(); let called = false;
+  await assert.rejects(() => loadRunTrace('r', async () => { called = true; return run([], null); }, { signal: controller.signal }), /abort/i);
+  assert.equal(called, false);
 });
 test('approvals accept array or wrapper with optional workflow/created_at', () => {
   const a = parseApprovals({ approvals: [{ id: 'a', run_id: 'r', step_sequence: 2, node_id: 'n', message: 'm', status: 'pending' }] });

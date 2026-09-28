@@ -1,5 +1,6 @@
 package com.relay.api;
 
+import com.relay.engine.EngineJson;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
@@ -45,6 +46,12 @@ class RunQueryTest {
         assertThat(RunQueryService.listQuery(params("workflow_id","","status","","cursor","","limit","")).limit()).isEqualTo(25);
         for(String s:RunQueryService.STATUSES)assertThat(RunQueryService.listQuery(params("status",s)).status()).isEqualTo(s);
         assertThat(RunQueryService.listQuery(params("workflow_id","wf_x")).workflowId()).isEqualTo("wf_x");
+    }
+    @Test void runSummarySerializesFrozenCapIncludingNull() {
+        var withCap=new RunQueryService.RunSummary("r","w","queued","manual","n",0,12L,Instant.EPOCH,null,null);
+        var withoutCap=new RunQueryService.RunSummary("r","w","queued","manual","n",0,null,Instant.EPOCH,null,null);
+        assertThat(EngineJson.JSON.valueToTree(withCap).get("max_steps").asLong()).isEqualTo(12);
+        assertThat(EngineJson.JSON.valueToTree(withoutCap).get("max_steps").isNull()).isTrue();
     }
     @ParameterizedTest @ValueSource(strings={"0","101","-1","abc","1.5","9999999999"," 5"})
     void invalidLimitsAreRejected(String limit){rejected(()->RunQueryService.listQuery(params("limit",limit)));}

@@ -14,7 +14,7 @@ export type WorkflowDetail = {
 };
 export type RunSummary = {
   run_id: string; workflow_id: string; status: RunStatus; trigger_type: string; current_node_id: string | null;
-  steps_executed: number; created_at: string; started_at: string | null; finished_at: string | null;
+  steps_executed: number; max_steps: number | null; created_at: string; started_at: string | null; finished_at: string | null;
 };
 export type RunPage = { runs: RunSummary[]; next_cursor: string | null };
 export type Attempt = {
@@ -65,7 +65,7 @@ export function parseWorkflow(value: unknown): WorkflowDetail {
 }
 function summary(o: Record<string, unknown>): RunSummary {
   return { run_id: str(o.run_id), workflow_id: str(o.workflow_id), status: oneOf(o.status, RUN_STATUSES), trigger_type: str(o.trigger_type),
-    current_node_id: optStr(o.current_node_id), steps_executed: int(o.steps_executed), created_at: str(o.created_at),
+    current_node_id: optStr(o.current_node_id), steps_executed: int(o.steps_executed), max_steps: optInt(o.max_steps), created_at: str(o.created_at),
     started_at: optStr(o.started_at), finished_at: optStr(o.finished_at) };
 }
 export function parseRunPage(value: unknown): RunPage {
@@ -117,6 +117,34 @@ export function mergeRunPages(pages: RunDetail[]): RunDetail {
   for (const p of pages) for (const s of p.steps) bySeq.set(s.sequence, s);
   const last = pages[pages.length - 1];
   return { ...pages[0], steps: [...bySeq.values()].sort((a, b) => a.sequence - b.sequence), steps_next_after: last.steps_next_after };
+}
+
+export class TraceIncompleteError extends ApiError {
+  constructor() {
+    super('format');
+    this.message = 'The run trace is incomplete because its page continuation was invalid or exceeded the safety limit.';
+  }
+}
+
+export async function loadRunTrace(runId: string, request: (path: string) => Promise<unknown>, options: { signal?: AbortSignal; maxPages?: number } = {}): Promise<RunDetail> {
+  const pages: RunDetail[] = [];
+  const seen = new Set<number>();
+  let after: number | null = 0;
+  const maxPages = options.maxPages ?? 2_000;
+  if (!Number.isInteger(maxPages) || maxPages < 1) throw new ApiError('configuration');
+  while (after !== null) {
+    options.signal?.throwIfAborted();
+    if (pages.length >= maxPages) throw new TraceIncompleteError();
+    const page = parseRun(await request(`/runs/${encodeURIComponent(runId)}${after ? `?steps_after=${after}` : ''}`));
+    pages.push(page);
+    const next = page.steps_next_after;
+    if (next !== null) {
+      if (next <= after || seen.has(next)) throw new TraceIncompleteError();
+      seen.add(next);
+    }
+    after = next;
+  }
+  return mergeRunPages(pages);
 }
 
 export const STATUS_LABEL: Record<string, string> = {

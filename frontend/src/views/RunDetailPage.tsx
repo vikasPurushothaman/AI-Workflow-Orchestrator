@@ -1,23 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
-import { TERMINAL, cancellationText, formatDuration, formatTokens, mergeRunPages, parseDecision, parseRun, type Attempt, type RunDetail, type Step } from '../model.ts';
+import { TERMINAL, cancellationText, formatDuration, formatTokens, loadRunTrace, parseDecision, type Attempt, type RunDetail, type Step } from '../model.ts';
 import { useResource } from '../useResource.ts';
 import { Fields, JsonBlock, PageHeading, ResourceView, Status, Time, seg } from '../ui.tsx';
 import { useSession } from '../SessionContext.tsx';
 import { sendCommand } from '../mutation.ts';
 import { errorMessage } from '../session.ts';
-
-const MAX_PAGES = 2_000;
-async function loadRun(runId: string, request: (path: string) => Promise<unknown>): Promise<RunDetail> {
-  const pages: RunDetail[] = [];
-  let after: number | null = 0;
-  // Follow every continuation so later loop rows are never silently hidden.
-  while (after !== null && pages.length < MAX_PAGES) {
-    const page = parseRun(await request(`/runs/${seg(runId)}${after ? `?steps_after=${after}` : ''}`));
-    pages.push(page); after = page.steps_next_after;
-  }
-  return mergeRunPages(pages);
-}
 
 function AttemptRow({ a }: { a: Attempt }) {
   return <tr>
@@ -86,32 +74,46 @@ function Trace({ run }: { run: RunDetail }) {
   </li>)}</ol>;
 }
 
-type CancelState = { phase: 'idle' | 'confirm' | 'sending' } | { phase: 'done'; text: string; tone: 'ok' | 'warn' | 'error' };
-function CancelControl({ run, onChanged }: { run: RunDetail; onChanged: () => void }) {
+type CancelState = { phase: 'idle' | 'confirm' | 'sending' }
+  | { phase: 'done'; text: string; tone: 'ok' | 'warn' | 'error'; allowRetry: boolean }
+  | { phase: 'unknown'; afterReadId: number; reconciled: boolean };
+function CancelControl({ run, onChanged, successfulReadId, readStartedId }: {
+  run: RunDetail; onChanged: () => void; successfulReadId: number; readStartedId: () => number;
+}) {
   const session = useSession();
   const [state, setState] = useState<CancelState>({ phase: 'idle' });
   const trigger = useRef<HTMLButtonElement>(null);
   const notice = useRef<HTMLParagraphElement>(null);
   const terminal = TERMINAL.has(run.status);
-  useEffect(() => { if (state.phase === 'done') notice.current?.focus(); }, [state.phase]);
-  if (terminal && state.phase !== 'done') return null;
+  useEffect(() => { if (state.phase === 'done' || state.phase === 'unknown') notice.current?.focus(); }, [state.phase]);
+  useEffect(() => {
+    if (state.phase !== 'unknown' || state.reconciled || successfulReadId <= state.afterReadId) return;
+    if (terminal || run.cancel_requested_at) {
+      setState({ phase: 'done', tone: 'warn', allowRetry: false, text: terminal
+        ? 'Cancellation outcome reconciled. The run is now terminal.'
+        : 'Cancellation outcome reconciled. The server recorded the cancellation request.' });
+    } else setState({ ...state, reconciled: true });
+  }, [run.cancel_requested_at, state, successfulReadId, terminal]);
+  if (terminal && state.phase !== 'done' && state.phase !== 'unknown') return null;
   const pending = !!run.cancel_requested_at && !terminal;
   const confirm = async () => {
     setState({ phase: 'sending' });
     const out = await sendCommand(session, `/runs/${seg(run.run_id)}/cancel`);
     if (out.kind === 'ok') {
       let status = 'unknown'; try { status = parseDecision(out.value).status; } catch { /* reconcile below */ }
-      setState({ phase: 'done', tone: 'ok', text: status === 'cancelled' ? 'Run cancelled. No further work will start.' : 'Cancellation requested. The current step may finish; no further work will start.' });
-    } else if (out.kind === 'conflict') setState({ phase: 'done', tone: 'warn', text: 'This run changed before cancellation was saved (it may already have finished). Current state is shown below.' });
-    else if (out.kind === 'unknown') setState({ phase: 'done', tone: 'warn', text: 'Cancellation outcome unknown — the request may have been saved. Refreshing the run; do not assume it was cancelled.' });
-    else if (out.kind === 'missing') setState({ phase: 'done', tone: 'error', text: 'This run no longer exists.' });
-    else setState({ phase: 'done', tone: 'error', text: errorMessage(out.error) });
+      setState({ phase: 'done', tone: 'ok', allowRetry: false, text: status === 'cancelled' ? 'Run cancelled. No further work will start.' : 'Cancellation requested. The current step may finish; no further work will start.' });
+    } else if (out.kind === 'conflict') setState({ phase: 'done', tone: 'warn', allowRetry: false, text: 'This run changed before cancellation was saved (it may already have finished). Current state is shown below.' });
+    else if (out.kind === 'unknown') setState({ phase: 'unknown', afterReadId: readStartedId(), reconciled: false });
+    else if (out.kind === 'missing') setState({ phase: 'done', tone: 'error', allowRetry: false, text: 'This run no longer exists.' });
+    else setState({ phase: 'done', tone: 'error', allowRetry: true, text: errorMessage(out.error) });
     onChanged();
   };
   return <section className="cancel" aria-label="Cancel run">
     {state.phase === 'done' && <p ref={notice} tabIndex={-1} role="status" className={`result ${state.tone}`}>{state.text}</p>}
+    {state.phase === 'unknown' && <p ref={notice} tabIndex={-1} role="status" className="result warn">Cancellation outcome unknown — the request may have been saved.
+      {state.reconciled ? ' A fresh read still shows an active run with no cancellation request. You may deliberately try again, but the first request could still conflict.' : ' Waiting for a fresh run read before allowing another cancellation.'}</p>}
     {pending && <p className="muted">Cancellation requested at <Time value={run.cancel_requested_at} />.</p>}
-    {!terminal && !pending && state.phase !== 'confirm' && state.phase !== 'sending' &&
+    {!terminal && !pending && (state.phase === 'idle' || (state.phase === 'done' && state.allowRetry) || (state.phase === 'unknown' && state.reconciled)) &&
       <button ref={trigger} type="button" className="danger" onClick={() => setState({ phase: 'confirm' })}>Cancel run</button>}
     {(state.phase === 'confirm' || state.phase === 'sending') && <div className="confirm" role="group" aria-label="Confirm cancellation"
       onKeyDown={e => { if (e.key === 'Escape' && state.phase === 'confirm') { setState({ phase: 'idle' }); requestAnimationFrame(() => trigger.current?.focus()); } }}>
@@ -124,7 +126,7 @@ function CancelControl({ run, onChanged }: { run: RunDetail; onChanged: () => vo
 
 export function RunDetailPage() {
   const { runId = '' } = useParams();
-  const run = useResource(`run:${runId}`, (s, signal) => loadRun(runId, path => s.request(path, { signal })),
+  const run = useResource(`run:${runId}`, (s, signal) => loadRunTrace(runId, path => s.request(path, { signal }), { signal }),
     { intervalMs: 2_000, stopWhen: r => TERMINAL.has(r.status) });
   return <>
     <PageHeading title="Run detail" description="Inspect the steps and recorded outcomes of a run." />
@@ -139,7 +141,7 @@ export function RunDetailPage() {
         ...(r.error ? [['Stopped because', <span className="warn">{r.error.code === 'max_steps' ? 'Step cap reached (max_steps)' : r.error.code}{r.error.node_id ? <> at <code>{r.error.node_id}</code></> : null}</span>] as [string, ReactNode]] : []),
         ...(cancellationText(r) ? [['Cancellation', <>{cancellationText(r)}{r.cancel_requested_by ? ` Requested by ${r.cancel_requested_by}.` : ''}</>] as [string, ReactNode]] : []),
       ]} />
-      <CancelControl run={r} onChanged={run.refresh} />
+      <CancelControl key={r.run_id} run={r} onChanged={run.refresh} successfulReadId={run.successfulReadId} readStartedId={run.readStartedId} />
       <details className="input"><summary>Trigger input</summary><JsonBlock value={r.input} label="Trigger input" /></details>
       <h2>Trace</h2>
       {!TERMINAL.has(r.status) && <p className="muted">Refreshing automatically every 2 seconds while the run is active.</p>}
