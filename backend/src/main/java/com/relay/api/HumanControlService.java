@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @ConditionalOnProperty(name="relay.launch.mode",havingValue="api")
 public class HumanControlService {
-    public record ApprovalView(String id,String run_id,long step_sequence,String node_id,String message,String status,String decided_by,Instant decided_at,Instant closed_at) {}
+    public record ApprovalView(String id,String run_id,String workflow_id,long step_sequence,String node_id,String message,String status,Instant created_at,String decided_by,Instant decided_at,Instant closed_at) {}
     public record RunResult(String run_id,String status) {}
     private final JdbcTemplate sql;
     public HumanControlService(JdbcTemplate sql){this.sql=sql;}
@@ -28,8 +28,8 @@ public class HumanControlService {
     public List<ApprovalView> list(String status) {
         ManagementAuthentication.requireActor();
         if(!Set.of("pending","approved","rejected","closed").contains(status))throw new ApiFailure(ApiFailure.Reason.INVALID_INPUT);
-        return sql.query("SELECT a.* FROM approvals a JOIN runs r ON r.run_id=a.run_id WHERE a.status=? AND (?<>'pending' OR (a.closed_at IS NULL AND r.status='waiting_approval')) ORDER BY a.created_at,a.id",
-            (rs,n)->new ApprovalView(rs.getString("id"),rs.getString("run_id"),rs.getLong("step_sequence"),rs.getString("node_id"),rs.getString("message"),rs.getString("status"),rs.getString("decided_by"),time(rs,"decided_at"),time(rs,"closed_at")),status,status);
+        return sql.query("SELECT a.*,r.workflow_id FROM approvals a JOIN runs r ON r.run_id=a.run_id WHERE a.status=? AND (?<>'pending' OR (a.closed_at IS NULL AND r.status='waiting_approval')) ORDER BY a.created_at,a.id",
+            (rs,n)->new ApprovalView(rs.getString("id"),rs.getString("run_id"),rs.getString("workflow_id"),rs.getLong("step_sequence"),rs.getString("node_id"),rs.getString("message"),rs.getString("status"),time(rs,"created_at"),rs.getString("decided_by"),time(rs,"decided_at"),time(rs,"closed_at")),status,status);
     }
     private static Instant time(java.sql.ResultSet rs,String name)throws java.sql.SQLException {
         var value=rs.getObject(name,LocalDateTime.class);return value==null?null:value.toInstant(ZoneOffset.UTC);

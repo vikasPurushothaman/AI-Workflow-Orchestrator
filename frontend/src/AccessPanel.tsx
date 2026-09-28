@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { ManagementSession } from './session.ts';
-import { relayClient } from './client.ts';
+import { useSession } from './SessionContext.tsx';
 
 export function AccessPanel() {
-  const [session] = useState(() => new ManagementSession(relayClient()));
+  const session = useSession();
   const state = useSyncExternalStore(session.subscribe, session.snapshot);
   const [token, setToken] = useState('');
   const input = useRef<HTMLInputElement>(null);
   const previous = useRef(state.phase);
   useEffect(() => {
     if (state.phase === 'disconnected' && previous.current !== 'disconnected') input.current?.focus();
+    // After connecting the form disappears; move focus to the page heading instead of losing it to <body>.
+    if (state.phase === 'connected' && previous.current !== 'connected') document.querySelector<HTMLElement>('main h1')?.focus();
     previous.current = state.phase;
   }, [state.phase]);
-  useEffect(() => () => session.disconnect(), [session]);
   return <section className="access-panel" aria-label="API access">
     <div><h2>API access</h2><p>Your token stays in memory and is cleared on reload.</p></div>
     {state.phase === 'connected' ? <button onClick={() => session.disconnect()}>Disconnect</button> :

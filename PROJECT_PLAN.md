@@ -9,9 +9,9 @@ Build an AI workflow orchestrator with Java, Spring Boot, Spring Data JPA, MySQL
 - [x] Create this ordered project checklist in the local project folder.
 - [x] Complete Phase 1: inspect the supplied contracts and finalize the design (design baseline complete; D01 resolved by user on2026-09-28: preserve supplied graph and enforce runtime gates).
 
-**Next item: 6.1 — implement run list/detail and trace APIs with filtering and pagination. Phase5 is complete, including live OpenRouter verification.**
+**Next item: 7.1 — run the supplied smoke tests against the implemented API contract. Phase6 (run visibility APIs and read-and-operate console) is complete.**
 
-The Spring Boot backend, health probes and API/worker bootstrap with shared database configuration are implemented and tested. MySQL Compose is running healthy with verified persistence/reset. Java-to-MySQL startup, test migration execution and readiness recovery are verified; domain Flyway schema is implemented and verified on disposable MySQL. Applying it to the ordinary local database requires normal API startup; deterministic worker execution is now implemented and verified. Workflow draft create/update/list/detail and validated publication APIs are implemented, with internal immutable run-snapshot preparation; the console can confirm access through the real workflow list. Normal API startup now inserts missing canonical Published seeds without overwriting existing workflows. Phase4 manual/webhook acceptance, durable ownership/recovery, deterministic handlers, retries and persisted step caps are complete; a packaged worker kill-and-resume test verified one original mock-world effect plus one replay with a stable key. Phase5 AI/approval handlers, human decision routes and cancellation are implemented; local verification passes. The user-selected OpenRouter adapter is configured and live-verified with openai/gpt-5-mini; Phase5 is complete. Earlier direct-OpenAI quota failures are historical. The React/Vite frontend shell and tested API transport are implemented; placeholder pages do not yet load domain data. A GitHub repository is not needed to continue. All agent work must remain local: never push or publish through Git or another mechanism. Any eventual repository publication is a manual user task.
+The Spring Boot backend, health probes and API/worker bootstrap with shared database configuration are implemented and tested. MySQL Compose is running healthy with verified persistence/reset. Java-to-MySQL startup, test migration execution and readiness recovery are verified; domain Flyway schema is implemented and verified on disposable MySQL. Applying it to the ordinary local database requires normal API startup; deterministic worker execution is now implemented and verified. Workflow draft create/update/list/detail and validated publication APIs are implemented, with internal immutable run-snapshot preparation; the console can confirm access through the real workflow list. Normal API startup now inserts missing canonical Published seeds without overwriting existing workflows. Phase4 manual/webhook acceptance, durable ownership/recovery, deterministic handlers, retries and persisted step caps are complete; a packaged worker kill-and-resume test verified one original mock-world effect plus one replay with a stable key. Phase5 AI/approval handlers, human decision routes and cancellation are implemented; local verification passes. The user-selected OpenRouter adapter is configured and live-verified with openai/gpt-5-mini; Phase5 is complete. Earlier direct-OpenAI quota failures are historical. Phase6 adds redacted run list/detail/trace APIs and the React read-and-operate console (workflows, definitions, runs, traces, approvals, cancellation), verified against mocked and live stacks; demo steps are in `docs/CONSOLE_DEMO.md`. A GitHub repository is not needed to continue. All agent work must remain local: never push or publish through Git or another mechanism. Any eventual repository publication is a manual user task.
 
 Project rules: read `AGENTS.md` before every task. Maintain `API_DOCUMENTATION.md` with every route addition or change.
 
@@ -142,20 +142,20 @@ Version baseline selected in `docs/SETUP.md` (2.2); resolve dependencies and ver
 
 ## Phase 6 — Run visibility and frontend console
 
-- [ ] **6.1** Implement run list/detail and trace APIs with filtering/pagination required for a usable console.
-- [ ] **6.2** Include resolved inputs, outputs, attempts, timestamps, durations, errors, and AI usage in traces; redact secrets.
-- [ ] **6.3** Build the application shell, navigation, and protected API access flow.
-- [ ] **6.4** Build workflow list/detail pages with draft/published status.
-- [ ] **6.5** Display workflow definition details and published status in the read-and-operate console; creation/editing/publishing use documented APIs.
-- [ ] **6.6** Show workflow node and branch details using a simple readable view; no graphical builder required.
-- [ ] **6.7** Document manual-trigger API demo steps and expose created runs through console history.
-- [ ] **6.8** Build run history and run detail with status refresh, branch/step progress and the existing cooperative cancellation action (console design 1.9).
-- [ ] **6.9** Build step trace inspection for inputs, outputs, attempts, failures, and AI usage.
-- [ ] **6.10** Build the approval inbox and approve/reject controls with decision feedback.
-- [ ] **6.11** Add loading, empty, validation-error, and request-failure states; verify keyboard usability and smaller screens.
-- [ ] **6.12** Verify console workflow/run visibility and approval actions for an API-triggered run, including a paused approval.
+- [x] **6.1** Implement run list/detail and trace APIs with filtering/pagination required for a usable console.
+- [x] **6.2** Include resolved inputs, outputs, attempts, timestamps, durations, errors, and AI usage in traces; redact secrets.
+- [x] **6.3** Build the application shell, navigation, and protected API access flow.
+- [x] **6.4** Build workflow list/detail pages with draft/published status.
+- [x] **6.5** Display workflow definition details and published status in the read-and-operate console; creation/editing/publishing use documented APIs.
+- [x] **6.6** Show workflow node and branch details using a simple readable view; no graphical builder required.
+- [x] **6.7** Document manual-trigger API demo steps and expose created runs through console history.
+- [x] **6.8** Build run history and run detail with status refresh, branch/step progress and the existing cooperative cancellation action (console design 1.9).
+- [x] **6.9** Build step trace inspection for inputs, outputs, attempts, failures, and AI usage.
+- [x] **6.10** Build the approval inbox and approve/reject controls with decision feedback.
+- [x] **6.11** Add loading, empty, validation-error, and request-failure states; verify keyboard usability and smaller screens.
+- [x] **6.12** Verify console workflow/run visibility and approval actions for an API-triggered run, including a paused approval.
 
-**Exit check:** The required scenarios can be demonstrated through the console without manually editing the database.
+**Exit check:** The required scenarios can be demonstrated through the console without manually editing the database. **Verified complete in task6.12** against an isolated live stack (approval, rejection, auto branch, step cap, cancellation); AI-success branch requires the real provider.
 
 ## Phase 7 — End-to-end verification
 
@@ -199,6 +199,155 @@ Version baseline selected in `docs/SETUP.md` (2.2); resolve dependencies and ver
 Optional enhancements are excluded from the active roadmap. Build only what is needed for the PDF requirements and supporting contracts. Record and resolve scope questions before implementing affected behavior.
 
 ## Task records
+
+### Task 6.12 — Console end-to-end verification — complete (2026-09-28)
+
+- **Requirement/source:** Phase6 exit check; CONSOLE Q01–Q08; V19.
+- **What we will do and why:** Prove the console works against the real stack, not only mocked routes: MySQL (Compose), packaged API and worker, supplied mock world, and the built console. Trigger runs through the documented API (6.7), then drive Chromium through workflow list/detail, run history, run trace, the paused `wf_expense_approval` approval (approve one run, reject another), and cancellation of a delayed run.
+- **Files/components affected:** `frontend/tests/e2e-live.spec.ts` (opt-in Playwright run, skipped unless `RELAY_E2E_TOKEN` is set), `frontend/playwright.live.config.ts`, `docs/phase6-verification.txt`.
+- **Acceptance criteria:** All steps pass against the live stack with no database edits; approved run ends `succeeded`, rejected run `cancelled` with decider evidence visible in the trace; no token appears in URL or storage.
+- **Test roadmap:** Prereqs: Docker, Java21, Node24, Python3, seeds loaded. Command: `RELAY_E2E_TOKEN=... npx playwright test -c playwright.live.config.ts`. Cases: connect; seed workflows listed as Published; workflow detail nodes/edges; API-triggered run visible in history; trace steps and AI/branch data; paused approval visible in inbox and run; approve → succeeded; reject → cancelled; cancel of queued/delayed run. Manual reproduction steps recorded in the evidence file.
+- **API documentation changes:** None (no route change); link evidence.
+- **Implemented result:** Opt-in `tests/e2e-live.spec.ts` + `playwright.live.config.ts` drove the built console against an isolated live stack: published seeds, frozen definition, API-triggered run through history/trace, paused approval approved and another rejected, auto branch, step cap, delay cancellation; ledger confirmed no unexpected effects. Stack torn down afterwards.
+- **Verification results:** Backend final `test bootJar testcontainersTest`: 223 unit + 32 real-MySQL, 0 failed. Frontend: `tsc` clean, `npm test` 57/57, mocked `npx playwright test` 24/24 (72/72 over 3 repeats), live `playwright.live.config.ts` 6/6 against an isolated real stack. 13 document checks pass. Intermediate failures and fixes: `docs/phase6-verification.txt`.
+- **Limitations/blockers:** The AI-success branch was not exercised live: the supplied mock provider replies in prose by design and the real provider was not used without the user's go-ahead. Latent JVM-vs-MySQL clock skew risk recorded.
+- **Next item:** 7.1.
+
+### Task 6.11 — Console states, keyboard and small screens — complete (2026-09-28)
+
+- **Requirement/source:** CONSOLE view-state table, accessibility and responsive rules.
+- **What we will do and why:** Consistent loading (labeled progress, no fake rows), empty (context-specific), validation error (safe API message plus filter reset), request failure (retain stale data with timestamp and Retry), 401 (session cleared), 403, 404 (Not found with list link; network failure is not 404). Verify keyboard-only operation, visible focus, 320px width with no horizontal page scroll, and long IDs/JSON contained.
+- **Files/components affected:** shared `frontend/src/ui.tsx` state components, `style.css`, Playwright specs.
+- **Acceptance criteria / test roadmap:** Playwright with mocked routes for each state per view; keyboard traversal through inbox confirm/Escape; 320px `scrollWidth<=innerWidth` on list, trace and inbox with 150-char IDs; screenshots saved.
+- **API documentation changes:** None.
+- **Implemented result:** Shared loading/empty/error/stale/not-found states, labeled progress, keyboard operation (tab order, Escape, focus return), 320 px layouts with long IDs/JSON contained; a mobile trace-header overlap found in screenshots was fixed.
+- **Verification results:** Backend final `test bootJar testcontainersTest`: 223 unit + 32 real-MySQL, 0 failed. Frontend: `tsc` clean, `npm test` 57/57, mocked `npx playwright test` 24/24 (72/72 over 3 repeats), live `playwright.live.config.ts` 6/6 against an isolated real stack. 13 document checks pass. Intermediate failures and fixes: `docs/phase6-verification.txt`.
+- **Limitations/blockers:** None beyond the Phase6 limitations in the evidence file.
+- **Next item:** 6.12.
+
+### Task 6.10 — Approval inbox and decisions — complete (2026-09-28)
+
+- **Requirement/source:** Fixed GET approvals/POST approve; reject route; CONSOLE U05 decision rules.
+- **What we will do and why:** `/console/approvals` lists pending requests oldest first (workflow via run, run link, node/sequence, time, message as plain text), with `?focus=<approvalId>`. Approve/Reject opens inline confirmation (reject states it cancels the run); Escape cancels; confirm sends exactly one POST, disables both buttons, never retries automatically; success shows recorded result and refreshes; 409 refetches and shows "This request changed before your decision was saved"; timeout/abort shows "Decision outcome unknown" and blocks repeat until fresh state. 2s polling.
+- **Files/components affected:** `frontend/src/views/ApprovalsPage.tsx`, `model.ts`, tests.
+- **Acceptance criteria / test roadmap:** Mocked Playwright: list render/escaping, focus param, approve success, reject wording/success, 409 conflict, timeout unknown outcome with no second POST, Escape closes and restores focus, empty state "No pending approvals." Unit tests for approval list parsing.
+- **API documentation changes:** Amended during implementation: `GET /approvals` items gain additive `workflow_id` and `created_at` (the design requires workflow context and request time, which the Phase5 projection lacked). Documented in API_DOCUMENTATION with a HumanAiMySqlTest assertion.
+- **Implemented result:** Inbox oldest first with workflow/run/node/request time and plain-text message, `?focus=` highlighting, inline confirm (reject states it cancels the run), exactly one POST, success notice with View run, conflict and unknown-outcome reconciliation without resend. Backend `GET /approvals` gained workflow_id and created_at.
+- **Verification results:** Backend final `test bootJar testcontainersTest`: 223 unit + 32 real-MySQL, 0 failed. Frontend: `tsc` clean, `npm test` 57/57, mocked `npx playwright test` 24/24 (72/72 over 3 repeats), live `playwright.live.config.ts` 6/6 against an isolated real stack. 13 document checks pass. Intermediate failures and fixes: `docs/phase6-verification.txt`.
+- **Limitations/blockers:** None beyond the Phase6 limitations in the evidence file.
+- **Next item:** 6.11.
+
+### Task 6.9 — Step trace inspection — complete (2026-09-28)
+
+- **Requirement/source:** CONSOLE trace-field table; 6.2 payload.
+- **What we will do and why:** Each trace row expands (button with `aria-expanded`) into Input, Output, Error, Attempts (number, cause, status, error, timing, provider/model, tokens; uncertain labeled "Outcome unknown — the remote call may have completed"), approval evidence, idempotency key and branch. Null tokens show "Unavailable", not 0. Expansion state keyed by sequence survives polling; on first open the active/failed row is revealed.
+- **Files/components affected:** `frontend/src/views/RunDetailPage.tsx`, `model.ts`, tests.
+- **Acceptance criteria / test roadmap:** Mocked Playwright: expand rows, attempts table, uncertain label, JSON shown as text (script payload not executed), expansion kept after refresh; unit tests for token/duration formatting.
+- **API documentation changes:** None.
+- **Implemented result:** Expandable trace rows (stable across polling; active/failed row revealed on first load) showing timing, branch, delay/retry deadlines, idempotency key, AI tokens (null = Unavailable), approval evidence, redacted input/output/error and attempts table with the uncertain-outcome label.
+- **Verification results:** Backend final `test bootJar testcontainersTest`: 223 unit + 32 real-MySQL, 0 failed. Frontend: `tsc` clean, `npm test` 57/57, mocked `npx playwright test` 24/24 (72/72 over 3 repeats), live `playwright.live.config.ts` 6/6 against an isolated real stack. 13 document checks pass. Intermediate failures and fixes: `docs/phase6-verification.txt`.
+- **Limitations/blockers:** None beyond the Phase6 limitations in the evidence file.
+- **Next item:** 6.10.
+
+### Task 6.8 — Run history and run detail — complete (2026-09-28)
+
+- **Requirement/source:** CONSOLE U03/U04, status table, cancellation rules; 6.1 routes.
+- **What we will do and why:** `/console/runs` with workflow and status filters in URL query (invalid values show a filter error and Reset, no request), 25 per page, Next/Previous via cursor stack, newest first, 5s polling of the current page. `/console/runs/:runId` shows summary (status label, workflow, times in UTC, steps/cap, error/cap reason, cancellation notice, AI usage) and the ordered trace loading all step pages; 2s polling until terminal, then stops but keeps Refresh. Cancel button (queued/running/waiting_approval only) with inline confirmation "Stop future work; the current step may finish.", one POST, 202 shows cancellation requested, 409 refetches.
+- **Files/components affected:** `frontend/src/views/RunsPage.tsx`, `RunDetailPage.tsx`, `polling.ts`, tests.
+- **Acceptance criteria / test roadmap:** Mocked Playwright: filters → query params, invalid filter, paging next/prev and end, run link encoding, detail summary, multi-page trace loaded, polling stops at terminal, cancel confirm/202/409. Unit tests for polling backoff and query building.
+- **API documentation changes:** None.
+- **Implemented result:** Runs page with URL-backed workflow/status filters validated before any request, server-side cursor paging (Previous/Next/End of list), newest first; run detail with summary, cap/cancellation wording, 2 s polling that stops at terminal state, all step pages merged, and one-shot cancel with confirmation, Escape, 202/409/unknown handling.
+- **Verification results:** Backend final `test bootJar testcontainersTest`: 223 unit + 32 real-MySQL, 0 failed. Frontend: `tsc` clean, `npm test` 57/57, mocked `npx playwright test` 24/24 (72/72 over 3 repeats), live `playwright.live.config.ts` 6/6 against an isolated real stack. 13 document checks pass. Intermediate failures and fixes: `docs/phase6-verification.txt`.
+- **Limitations/blockers:** None beyond the Phase6 limitations in the evidence file.
+- **Next item:** 6.9.
+
+### Task 6.7 — Manual-trigger demo steps — complete (2026-09-28)
+
+- **Requirement/source:** CONSOLE (creation/trigger are API-driven); PDF demo needs.
+- **What we will do and why:** Document exact curl steps to trigger each seed (manual and webhook) and where the created run appears in the console (history and `/console/runs/<run_id>` direct link). The console shows a "How to start runs" note linking the doc; no trigger button (out of scope).
+- **Files/components affected:** `docs/CONSOLE_DEMO.md`, console empty states.
+- **Acceptance criteria / test roadmap:** Document check: every seed ID and route in the doc matches seeds and API docs; commands executed during 6.12 with recorded results.
+- **API documentation changes:** Link from API docs to the demo steps.
+- **Implemented result:** `docs/CONSOLE_DEMO.md`: stack start pointers, verified curl commands for every seed scenario (secrets read from the fixture file, not copied), console walkthrough and the opt-in live test command. SETUP/CONSOLE stale statements updated.
+- **Verification results:** Backend final `test bootJar testcontainersTest`: 223 unit + 32 real-MySQL, 0 failed. Frontend: `tsc` clean, `npm test` 57/57, mocked `npx playwright test` 24/24 (72/72 over 3 repeats), live `playwright.live.config.ts` 6/6 against an isolated real stack. 13 document checks pass. Intermediate failures and fixes: `docs/phase6-verification.txt`.
+- **Limitations/blockers:** None beyond the Phase6 limitations in the evidence file.
+- **Next item:** 6.8.
+
+### Task 6.6 — Readable node and branch view — complete (2026-09-28)
+
+- **Requirement/source:** CONSOLE U02 node table.
+- **What we will do and why:** Node table in definition order: ID (entry marked), type (unknown types shown as stored text), parameters as read-only JSON in expandable details, and edges (`next` or `on_true`/`on_false`) as in-page links to the target node; null edge shows "End"; dangling targets shown as text "missing node".
+- **Files/components affected:** `WorkflowDetailPage.tsx`, `model.ts`.
+- **Acceptance criteria / test roadmap:** Unit tests for edge extraction (next/condition/null/dangling); Playwright edge link moves focus to target row.
+- **API documentation changes:** None.
+- **Implemented result:** Node table in definition order with Entry tag, unknown types shown as stored, parameters as read-only JSON, edges Next/If true/If false as in-page links, End for null and "missing node" for dangling targets.
+- **Verification results:** Backend final `test bootJar testcontainersTest`: 223 unit + 32 real-MySQL, 0 failed. Frontend: `tsc` clean, `npm test` 57/57, mocked `npx playwright test` 24/24 (72/72 over 3 repeats), live `playwright.live.config.ts` 6/6 against an isolated real stack. 13 document checks pass. Intermediate failures and fixes: `docs/phase6-verification.txt`.
+- **Limitations/blockers:** None beyond the Phase6 limitations in the evidence file.
+- **Next item:** 6.7.
+
+### Task 6.5 — Workflow definition and published status — complete (2026-09-28)
+
+- **Requirement/source:** CONSOLE U02.
+- **What we will do and why:** `/console/workflows/:id` shows name, ID, description, status, trigger type, "Secret configured" (never the value), entry, max_steps, optional limits labeled "Stored; not enforced", timestamps. Published → frozen published definition; draft with an older publication → tabs "Draft definition" / "Last published definition" with "New triggers require republishing the draft". "View runs" links to the filtered history.
+- **Files/components affected:** `WorkflowDetailPage.tsx`, tests.
+- **Acceptance criteria / test roadmap:** Mocked Playwright: published, draft-only, draft-with-publication, 404 Not found, secret never rendered.
+- **API documentation changes:** None.
+- **Implemented result:** Workflow detail: metadata, secret shown only as "Secret configured", entry, max_steps, optional limits labeled "stored; not enforced", frozen published definition by default, Draft / Last published toggle with republish notice, "View runs" link, Not found state.
+- **Verification results:** Backend final `test bootJar testcontainersTest`: 223 unit + 32 real-MySQL, 0 failed. Frontend: `tsc` clean, `npm test` 57/57, mocked `npx playwright test` 24/24 (72/72 over 3 repeats), live `playwright.live.config.ts` 6/6 against an isolated real stack. 13 document checks pass. Intermediate failures and fixes: `docs/phase6-verification.txt`.
+- **Limitations/blockers:** None beyond the Phase6 limitations in the evidence file.
+- **Next item:** 6.6.
+
+### Task 6.4 — Workflow list — complete (2026-09-28)
+
+- **Requirement/source:** CONSOLE U01; `GET /workflows`.
+- **What we will do and why:** Table of name, ID, status (Draft/Published text), trigger type, updated time (UTC); name links to detail; empty "No workflows yet" with seed/API instructions; no Create button; 5s polling.
+- **Files/components affected:** `WorkflowsPage.tsx`, tests.
+- **Acceptance criteria / test roadmap:** Mocked Playwright rows/links/empty/refresh failure keeps rows; unit parse tests reject malformed rows.
+- **API documentation changes:** None.
+- **Implemented result:** Workflow table (name link, ID, Draft/Published text status, trigger, UTC updated time), empty state with demo pointer, no Create button, stale data kept on refresh failure.
+- **Verification results:** Backend final `test bootJar testcontainersTest`: 223 unit + 32 real-MySQL, 0 failed. Frontend: `tsc` clean, `npm test` 57/57, mocked `npx playwright test` 24/24 (72/72 over 3 repeats), live `playwright.live.config.ts` 6/6 against an isolated real stack. 13 document checks pass. Intermediate failures and fixes: `docs/phase6-verification.txt`.
+- **Limitations/blockers:** None beyond the Phase6 limitations in the evidence file.
+- **Next item:** 6.5.
+
+### Task 6.3 — Shell, navigation and protected access — complete (2026-09-28)
+
+- **Requirement/source:** CONSOLE access/shell; tasks 2.7/3.4 foundation.
+- **What we will do and why:** Lift the memory-only `ManagementSession` into a React context shared by all views; views render a "Connect to view data" prompt until connected; disconnect/401 clears data, aborts requests and polling; shared `useResource` hook with generation guards, non-overlapping polling, visibility pause, backoff 5/10/30s, last-refresh time and Refresh button.
+- **Files/components affected:** `frontend/src/session.ts`, `SessionContext.tsx`, `polling.ts`, `App.tsx`, `AccessPanel.tsx`, existing tests updated for the new data views.
+- **Acceptance criteria / test roadmap:** Unit tests for backoff schedule and generation guard; Playwright: token never stored, disconnect clears rendered data, 401 during polling disconnects and refocuses token input.
+- **API documentation changes:** None.
+- **Implemented result:** `SessionContext` shares one memory-only session; `useResource` gives generation-guarded, non-overlapping polling with 5/10/30 s backoff, visibility pause, permanent-4xx stop, Refresh and last-updated time. Disconnect/401 clears data and refocuses the token input; after connecting, focus moves to the page heading.
+- **Verification results:** Backend final `test bootJar testcontainersTest`: 223 unit + 32 real-MySQL, 0 failed. Frontend: `tsc` clean, `npm test` 57/57, mocked `npx playwright test` 24/24 (72/72 over 3 repeats), live `playwright.live.config.ts` 6/6 against an isolated real stack. 13 document checks pass. Intermediate failures and fixes: `docs/phase6-verification.txt`.
+- **Limitations/blockers:** None beyond the Phase6 limitations in the evidence file.
+- **Next item:** 6.4.
+
+### Task 6.2 — Trace payload and redaction — complete (2026-09-28)
+
+- **Requirement/source:** 6.2; fixed GET run "full trace also contains resolved inputs, outputs, attempts, timing, AI token usage"; CONSOLE trace-field table; secrets never exposed.
+- **What we will do and why:** Extend `GET /runs/{runId}` (additive, no field removed): run `workflow_name` and `entry` (from snapshot), redacted `input`, `ai_tokens_used`, `ai_usage_complete`; each step adds redacted `resolved_input` and `output`, `error` object, `idempotency_key`, `ai_repair_count`, `tokens_prompt`, `tokens_completion`, `ai_usage_complete`, `retry_due_at` (queue due time while waiting for retry), `approval` evidence (id, status, message, decided_by/at, closed_at, close_reason) and `attempts[]` (attempt_no, status, cause, error, redacted output, provider, model, tokens, started/finished/duration). Frozen dispatch requests and AI request bodies are not exposed. Redaction (`TraceRedactor`): recursive; values of keys whose normalized name contains authorization, secret, token, password, passwd, apikey, cookie, credential, privatekey or signature become `"[REDACTED]"`; the run's webhook secret value is replaced wherever it appears in strings; sensitive query parameters and user-info in URL strings are redacted.
+- **Files/components affected:** `RunQueryService.java`, new `TraceRedactor.java`, `RunQueryTest`/new `TraceRedactorTest`, `RunQueryMySqlTest`, `API_DOCUMENTATION.md`.
+- **Acceptance criteria:** Every listed field present with correct values for delay/condition/approval/AI(mock)/cap/retry cases; no secret or sensitive header/query value in any response; 6.1 behavior unchanged.
+- **Test roadmap:** Unit: redaction of nested keys, arrays, header names case/format variants, non-sensitive keys untouched (e.g. `idempotency_key`, `max_steps`), secret value substring replacement, URLs with `?api_key=`/userinfo. MySQL/HTTP: approval evidence after approve; AI step with canned provider outcome shows attempts, tokens, provider/model and usage totals; http_request step with `Authorization` header and secret query parameter redacted; retry step shows `retry_due_at` and failed attempt error; webhook secret echoed into input by payload is redacted. Full regression afterwards.
+- **API documentation changes:** Extend the "Run visibility" section with the new fields, redaction rules and examples.
+- **Implemented result:** Implemented `TraceRedactor` and extended `GET /runs/{runId}` additively with workflow_name/entry, redacted input, run AI usage and per-step resolved_input, output, error, idempotency_key, AI repair/tokens, retry_due_at, approval evidence and attempts[]. Frozen dispatch requests and AI request bodies stay hidden. Webhook-secret value redaction applies to secrets of at least 8 characters (documented). 6.1's no-payload assertion was deliberately replaced.
+- **Verification results:** Backend final `test bootJar testcontainersTest`: 223 unit + 32 real-MySQL, 0 failed. Frontend: `tsc` clean, `npm test` 57/57, mocked `npx playwright test` 24/24 (72/72 over 3 repeats), live `playwright.live.config.ts` 6/6 against an isolated real stack. 13 document checks pass. Intermediate failures and fixes: `docs/phase6-verification.txt`.
+- **Limitations/blockers:** Short webhook secrets (<8 chars) are protected by key rules and snapshot hiding only; key-name rules intentionally over-redact.
+- **Next item:** 6.3.
+
+### Task 6.1 — Run list/detail APIs — complete (2026-09-28)
+
+- **Requirement/source:** Fixed `GET /runs/{runId}` (status, `steps[]` with `node_id`/`status`; smoke test V18); flexible run listing required by CAPSTONE_PACK_REVIEW "Additional flows" and CONSOLE U03/U04 (workflow/status filters, stable continuation, no silent trace truncation, no invented totals).
+- **What we will do and why:** Add the missing read side of runs so the smoke test, console history and trace can observe runs without the database. `GET /runs` lists newest first (`created_at DESC, run_id DESC`) with optional exact `workflow_id` and `status` filters, `limit` 1–100 (default 25) and an opaque keyset `cursor`; response `{"runs":[...],"next_cursor":...}`. `GET /runs/{runId}` returns the run summary (IDs, status, trigger type, current node, steps executed, `max_steps` from the frozen snapshot, created/started/finished, cancellation request/reason, run error code) plus `steps[]` ordered by sequence with `sequence`, `node_id`, `node_type`, `status`, `wait_reason`, `attempt_count`, `selected_next_node_id`, `resume_at`, timing and `duration_ms`. Because `max_steps` can be up to 2^31−1, steps are paged by `steps_after` (exclusive sequence, default 0) and `steps_limit` (1–500, default 500) with `steps_next_after` (null at end), so traces are never silently truncated. Run and steps are read in one read-only transaction for a consistent view. Scope split: resolved inputs, outputs, attempt records, step errors, AI usage and secret redaction are 6.2; run input and definition snapshot are not exposed in 6.1.
+- **Files/components affected:** New `backend/.../api/RunQueryController.java`, `RunQueryService.java` (JdbcTemplate reads using existing indexes `ix_runs_created`, `ix_runs_workflow`, `ix_runs_status`, steps PK); new `RunQueryTest` (unit: cursor codec/parameter validation) and `RunQueryMySqlTest` (real HTTP + MySQL); `API_DOCUMENTATION.md`; this plan. No schema change.
+- **Implementation steps:** (1) cursor encode/decode (base64url `epochMicros:runId`, strict); (2) parameter validation with 400 `invalid_input`; (3) list query with keyset predicate and `limit+1` look-ahead; (4) detail query with run row, snapshot `max_steps`, stepped page with look-ahead; (5) controller wiring in API mode; (6) tests; (7) docs.
+- **Acceptance criteria:** Both routes require the bearer token (401 otherwise); list filters/pages are server-side, stable across newly inserted runs, with no duplicates/gaps; invalid status/limit/cursor/steps params → 400; unknown run → 404; unknown workflow filter → empty 200; detail always includes `status` and `steps[]` with `node_id`/`status`; steps are complete across pages; no secrets, snapshot or raw input in responses; existing tests keep passing.
+- **Test roadmap:** Prereqs: Java 21, Docker for Testcontainers. Unit (`./gradlew test --tests com.relay.api.RunQueryTest`): cursor round-trip incl. Unicode run IDs; malformed/empty/non-base64/negative/non-numeric/missing-separator cursors rejected; limit 0/101/non-numeric rejected, 1/100 accepted; status outside six values rejected; steps_after negative/non-numeric rejected; steps_limit 0/501 rejected. MySQL (`./gradlew testcontainersTest --tests com.relay.api.RunQueryMySqlTest`): (a) no token/wrong token → 401 on both routes; (b) create runs across two workflows and statuses, page with limit 2 and verify order, disjoint complete pages and null final cursor; (c) insert a newer run between pages → no duplicate/gap in continuation; (d) workflow+status filters combined; unknown workflow → `{"runs":[],"next_cursor":null}`; (e) invalid params → 400 envelope; (f) missing run → 404; (g) queued run → `steps: []`, `steps_next_after: null`; (h) executed multi-step run (approval + loop) → ordered steps with node_id/status/branch; steps_limit=1 paging returns every step exactly once; (i) waiting-approval and cancelled runs show wait_reason/cancellation fields; (j) response contains no webhook secret or snapshot/input fields. Full regression: `./gradlew test bootJar testcontainersTest`.
+- **API documentation changes:** Add `GET /runs` and `GET /runs/{runId}` sections and route-index rows; update implementation status and the cancel section's "run status reads will be provided by Phase6" note.
+- **Implemented result:** `RunQueryService`/`RunQueryController` add authenticated `GET /runs` (newest first; exact `workflow_id`/`status` filters; `limit` 1–100; opaque base64url keyset cursor; `{runs,next_cursor}`) and `GET /runs/{runId}` (run summary, snapshot `max_steps`, `error {code,node_id}`, cancellation fields, ordered `steps[]` paged by `steps_after`/`steps_limit` ≤500 with `steps_next_after`). Unknown/repeated params and bad values → 400; missing run → 404; empty values mean unset. Run and steps are read in one read-only transaction. Deviation from the first draft: `attempt_count` means prepared handler invocations (≥1 for every executed node), not "0 for nodes that never dispatch"; corrected after a test disproved it. Four doc-consistency scripts re-pinned to the new API status sentence.
+- **Verification results:** Final `./gradlew --gradle-user-home .gradle/user-home --no-daemon --offline test bootJar testcontainersTest` passed: 219 unit (incl. 12 RunQueryTest) and 31 real-MySQL (incl. 3 RunQueryMySqlTest), none skipped/failed. 13 document checks exit 0. Intermediate failures (offline cache command, test compile error, wrong attempt_count doc claim) and fixes are in `docs/phase6-verification.txt`.
+- **How to test:** Start MySQL, API and worker per `docs/SETUP.md`; trigger `wf_runaway`, then `curl -H "Authorization: Bearer $RELAY_DEMO_TOKEN" http://localhost:8080/runs` and `.../runs/$RUN_ID` as in `API_DOCUMENTATION.md` "Run visibility — task6.1". Expected: newest-first list; detail ending `failed` with `error.code` `max_steps`. Or rerun the commands above.
+- **Limitations/blockers:** Trace payload fields/redaction are 6.2; supplied smoke test runs in 7.1; console screens are 6.3+.
+- **Next item:** 6.2.
 
 ### Task 5.1 — Approval wait — complete (2026-09-28)
 
@@ -1059,3 +1208,7 @@ Optional enhancements are excluded from the active roadmap. Build only what is n
 | 2026-09-28 | Task5.9 billing-error handling fixed; live success pending | Fixed sanitized permanent quota/credit errors and no-retry behavior;205 unit/14 targeted MySQL tests pass. Live probe now reports ai_credit_balance_exhausted with actionable guidance. Account credit still required;5.9 remains incomplete. |
 
 | 2026-09-28 | Task5.9 and Phase5 complete | User-selected OpenRouter adapter and private config verified.1 real live test,207 unit tests,14 targeted MySQL cases and4 helper tests pass; API/setup/plan updated. Evidence: `docs/phase5-verification.txt`. Next6.1. |
+
+| 2026-09-28 | Task6.1 complete | GET /runs (filters, keyset cursor) and GET /runs/{runId} (ordered paged steps, cap/cancel fields); 219 unit, 31 real-MySQL tests and 13 document checks passed. Evidence: `docs/phase6-verification.txt`. Next 6.2. |
+
+| 2026-09-28 | Tasks6.2–6.12 and Phase6 complete | Redacted trace payload; approvals workflow_id/created_at; React console (shell, workflows, definitions/branches, runs, trace, approvals, states) and demo doc. 223 unit/32 MySQL backend, 57 unit/24 mocked browser/6 live browser frontend tests, 13 document checks passed. Evidence: `docs/phase6-verification.txt`. Next 7.1. |

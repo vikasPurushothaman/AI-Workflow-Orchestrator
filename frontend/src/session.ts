@@ -12,7 +12,7 @@ export function errorMessage(error: unknown): string {
       case 400: case 422: return 'The request is invalid.';
       case 401: return 'Your token was not accepted. Enter a valid management token.';
       case 403: return 'Access denied. Check the allowed browser origin and your access.';
-      case 404: return 'The requested API is not available. Workflow access is not connected yet.';
+      case 404: return 'The requested resource or API was not found.';
       case 409: return 'The resource changed. Refresh before trying again.';
       case 429: return 'Too many requests. Wait before trying again.';
       default: return 'The API could not complete the request. Try again later.';
@@ -60,7 +60,7 @@ export class ManagementSession {
       if (generation !== this.#generation) return;
       if (!workflowList(result)) throw new ApiError('format');
       this.#token = token;
-      this.#publish({ phase: 'connected', message: 'API access confirmed. Data views are still being implemented.' });
+      this.#publish({ phase: 'connected', message: 'API access confirmed.' });
     } catch (error) {
       if (generation === this.#generation) this.disconnect(errorMessage(error));
     } finally { this.#requests.delete(controller); }

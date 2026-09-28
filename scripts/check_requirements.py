@@ -56,7 +56,7 @@ def validate(document):
                    'Idempotency-Key', '"error":{"message":', 'invalid_node_type',
                    'trigger.config', 'limits.max_steps', 'limits.timeout_seconds', 'limits.max_ai_tokens'):
         require(marker in document, 'contract/scope marker: ' + marker)
-    require('Workflow draft CRUD, publication, manual/webhook triggers, approval decisions and cancellation APIs are implemented; run-read APIs remain unimplemented.' in
+    require('Workflow draft CRUD, publication, manual/webhook triggers, approval decisions, cancellation, run list/detail (task6.1) and redacted run trace payloads (task6.2) are implemented; the read-and-operate console consumes them (tasks6.3–6.12).' in
             (ROOT / 'API_DOCUMENTATION.md').read_text(), 'API status honest')
 
 

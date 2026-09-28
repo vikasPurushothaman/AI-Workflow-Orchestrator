@@ -73,7 +73,7 @@ api = (ROOT / 'API_DOCUMENTATION.md').read_text()
 unfinished = re.search(r'^- \[ \] \*\*(\d+\.\d+)\*\*', plan, re.M)
 check('- [x] **1.1**' in plan and unfinished is not None
       and '**Next item: ' + unfinished.group(1) + ' ' in plan, 'checklist and next item agree')
-check('Workflow draft CRUD, publication, manual/webhook triggers, approval decisions and cancellation APIs are implemented; run-read APIs remain unimplemented.' in api, 'API implementation status remains honest')
+check('Workflow draft CRUD, publication, manual/webhook triggers, approval decisions, cancellation, run list/detail (task6.1) and redacted run trace payloads (task6.2) are implemented; the read-and-operate console consumes them (tasks6.3–6.12).' in api, 'API implementation status remains honest')
 check('never push or publish' in plan and 'manual user task' in plan, 'local-only publication rule preserved')
 check('**3.8** Implement frozen published definitions and per-run definition snapshots' in plan
       and '**5.11** Implement run cancellation' in plan, 'scope corrections and cancellation tracked')

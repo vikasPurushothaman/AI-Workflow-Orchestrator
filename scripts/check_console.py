@@ -53,7 +53,7 @@ def validate(text):
         unfinished = re.search(r'^- \[ \] \*\*(\d+\.\d+)\*\*', plan, re.M)
         assert '- [x] Complete Phase 1:' in plan and unfinished is not None, 'Phase exit incomplete'
         assert '**Next item: ' + unfinished.group(1) + ' ' in plan, 'Next item inconsistent'
-    assert 'Workflow draft CRUD, publication, manual/webhook triggers, approval decisions and cancellation APIs are implemented; run-read APIs remain unimplemented.' in (ROOT/'API_DOCUMENTATION.md').read_text(), 'API status drift'
+    assert 'Workflow draft CRUD, publication, manual/webhook triggers, approval decisions, cancellation, run list/detail (task6.1) and redacted run trace payloads (task6.2) are implemented; the read-and-operate console consumes them (tasks6.3–6.12).' in (ROOT/'API_DOCUMENTATION.md').read_text(), 'API status drift'
 
 
 def main():

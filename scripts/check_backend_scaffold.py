@@ -52,7 +52,7 @@ print('PASS: 23 passing HTTP tests, none skipped, and packaged jar exists')
 api = (ROOT/'API_DOCUMENTATION.md').read_text()
 for path in ['/actuator/health','/actuator/health/liveness','/actuator/health/readiness']:
     assert '| GET | '+path+' |' in api
-for phrase in ['Workflow draft CRUD, publication, manual/webhook triggers, approval decisions and cancellation APIs are implemented; run-read APIs remain unimplemented.', 'malformed JSON',
+for phrase in ['Workflow draft CRUD, publication, manual/webhook triggers, approval decisions, cancellation, run list/detail (task6.1) and redacted run trace payloads (task6.2) are implemented; the read-and-operate console consumes them (tasks6.3–6.12).', 'malformed JSON',
                'OUT_OF_SERVICE', '401', '503', 'No token is needed', 'No session', 'test bootJar']:
     assert phrase.lower() in api.lower(), phrase
 for doc in [ROOT/'API_DOCUMENTATION.md', ROOT/'docs/SETUP.md']:

@@ -51,6 +51,9 @@ class HumanAiMySqlTest extends MySqlIntegrationSupport {
         try(var c=api()) {
             var service=c.getBean(HumanControlService.class);var sql=c.getBean(JdbcTemplate.class);
             assertThat(human(()->service.list("pending"))).extracting(HumanControlService.ApprovalView::id).contains(aid);
+            var listed=human(()->service.list("pending")).stream().filter(v->v.id().equals(aid)).findFirst().orElseThrow();
+            assertThat(listed.workflow_id()).isEqualTo(sql.queryForObject("SELECT workflow_id FROM runs WHERE run_id=?",String.class,run));
+            assertThat(listed.created_at()).isNotNull();assertThat(listed.message()).isEqualTo("Review");
             assertThatThrownBy(()->service.decide(aid,true)).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
             var client=HttpClient.newHttpClient();String base="http://127.0.0.1:"+setting("RELAY_API_PORT");
             var unauth=client.send(HttpRequest.newBuilder(URI.create(base+"/approvals/"+aid+"/approve")).POST(HttpRequest.BodyPublishers.noBody()).build(),HttpResponse.BodyHandlers.ofString());assertThat(unauth.statusCode()).isEqualTo(401);

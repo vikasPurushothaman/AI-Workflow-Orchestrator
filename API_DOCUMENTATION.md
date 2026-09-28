@@ -2,7 +2,7 @@
 
 ## Implementation status
 
-Tasks 2.4–2.5 implement the three health probes and API/worker bootstrap below. Workflow draft CRUD, publication, manual/webhook triggers, approval decisions and cancellation APIs are implemented; run-read APIs remain unimplemented. Their fixed contracts are recorded in [requirements](docs/REQUIREMENTS.md) and will be implemented in later tasks.
+Tasks 2.4–2.5 implement the three health probes and API/worker bootstrap below. Workflow draft CRUD, publication, manual/webhook triggers, approval decisions, cancellation, run list/detail (task6.1) and redacted run trace payloads (task6.2) are implemented; the read-and-operate console consumes them (tasks6.3–6.12). Their fixed contracts are recorded in [requirements](docs/REQUIREMENTS.md) and will be implemented in later tasks.
 
 Update this file whenever a route is added, changed, or removed. Planned behavior must be clearly distinguished from implemented and verified behavior.
 
@@ -12,7 +12,7 @@ Planned definition validation, draft/publish eligibility, templates and step cap
 
 Planned persistence, acknowledgement, retry and uncertain-outcome rules are in [recovery protocol](docs/RECOVERY.md). Phase4 implements durable worker recovery; Phase5 extends it to AI repair and human control.
 
-Planned screen data requirements and fixed/flexible API dependencies are listed in [console design](docs/CONSOLE.md). Browser paths under /console are UI navigation, not implemented backend routes. Full projection/pagination contracts remain route implementation work.
+Planned screen data requirements and fixed/flexible API dependencies are listed in [console design](docs/CONSOLE.md). The implemented console and the verified API demo commands are described in [console demo](docs/CONSOLE_DEMO.md). Browser paths under /console are UI navigation, not implemented backend routes. Full projection/pagination contracts remain route implementation work.
 
 Task 2.5 requires `RELAY_MODE=api` for the database-backed HTTP server.
 `RELAY_MODE=worker` creates a non-web process with no health routes or listener.
@@ -35,10 +35,12 @@ not return HTTP errors. See [launch instructions](docs/SETUP.md#api-and-worker-l
 | POST | /workflows/{workflowId}/publish | Validate and freeze current draft | Task3.8 | PublicationMySqlTest |
 | POST | /workflows/{workflowId}/trigger | Accept manual run | Task4.1 | EngineMySqlTest |
 | POST | /hooks/{workflowId} | Accept webhook run | Task4.1 | EngineMySqlTest |
-| GET | /approvals | List approval requests by status | Task5.2 | HumanAiMySqlTest |
+| GET | /approvals | List approval requests by status (workflow_id/created_at added in 6.10) | Task5.2, 6.10 | HumanAiMySqlTest |
 | POST | /approvals/{id}/approve | Approve and resume or finish | Task5.2–5.3 | HumanAiMySqlTest |
 | POST | /approvals/{id}/reject | Reject and cancel the run | Task5.2–5.3 | HumanAiMySqlTest |
 | POST | /runs/{id}/cancel | Request cancellation | Task5.11 | HumanAiMySqlTest |
+| GET | /runs | List runs newest first with filters and cursor paging | Task6.1 | RunQueryMySqlTest, RunQueryTest |
+| GET | /runs/{runId} | Run status and ordered, redacted step trace (paged) | Task6.1–6.2 | RunQueryMySqlTest, RunQueryTest, TraceRedactorTest |
 
 ## Shared API conventions
 
@@ -210,6 +212,10 @@ For each applicable case, record concrete input/action and expected status/body/
 | 2026-09-25 | Task 2.4: three health probes and scaffold security/error behavior | 23 HTTP tests and packaged smoke check passed; MySQL readiness remains 2.9 |
 
 | 2026-09-25 | Task 2.5: API/worker availability and startup requirements | 78 automated tests and packaged startup checks passed; real MySQL verification remains 2.9. See [launch evidence](docs/launch-modes-verification.txt) |
+
+| 2026-09-28 | Task6.1: added GET /runs (filters, keyset cursor) and GET /runs/{runId} (ordered paged steps); status sentence and cancel note updated | 219 unit and 31 real-MySQL tests passed; 13 document checks passed. See [Phase6 verification](docs/phase6-verification.txt) |
+
+| 2026-09-28 | Task6.2: redacted trace payload (input, resolved input, output, error, attempts, AI usage, approval evidence, retry due) on GET /runs/{runId}; task6.10: workflow_id and created_at on GET /approvals | 223 unit and 32 real-MySQL tests passed (full run); HumanAiMySqlTest 14/14 after the approvals change. See [Phase6 verification](docs/phase6-verification.txt) |
 
 ## Supplied local test services — task 2.8
 
@@ -893,12 +899,12 @@ curl -H "Authorization: Bearer $RELAY_DEMO_TOKEN" 'http://localhost:8080/approva
 
 Example200 (IDs illustrative):
 ```json
-[{"id":"apr_example","run_id":"run_example","step_sequence":3,"node_id":"refund_gate","message":"Review refund","status":"pending","decided_by":null,"decided_at":null,"closed_at":null}]
+[{"id":"apr_example","run_id":"run_example","workflow_id":"wf_expense_approval","step_sequence":3,"node_id":"refund_gate","message":"Review refund","status":"pending","created_at":"2026-09-28T10:00:00.000000Z","decided_by":null,"decided_at":null,"closed_at":null}]
 ```
 
-Each item has string `id`, `run_id`, `node_id`, rendered `message`, and `status`, positive
-integer `step_sequence`, nullable string `decided_by`, and nullable UTC ISO8601
-`decided_at`/`closed_at`. Pending requests have no actor or timestamps. Approved/rejected
+Each item has string `id`, `run_id`, `workflow_id`, `node_id`, rendered `message`, and `status`, positive
+integer `step_sequence`, UTC ISO8601 `created_at` (request time), nullable string `decided_by`, and nullable UTC ISO8601
+`decided_at`/`closed_at`. `workflow_id` and `created_at` were added in task6.10 (additive) so the approval inbox can show workflow context and request time; tested in HumanAiMySqlTest.approvalWaitSurvivesRestartAndDecisionsAreAuthenticatedAndFinal. Pending requests have no actor or timestamps. Approved/rejected
 requests retain authenticated decision evidence; closed requests have a closure timestamp
 and no invented human decision. Treat rendered messages as untrusted text in the UI.
 
@@ -952,7 +958,7 @@ same run first: only a valid serialized transition commits. At a final approval 
 and the other conflicts. With an approval successor, cancellation can validly follow the
 committed approval before downstream dispatch. No partial approval/resume state survives
 transaction rollback. On client timeout or409, refresh current approval status before
-retrying; run status reads will be provided by Phase6.
+retrying; read run status with `GET /runs/{runId}` (task6.1).
 
 ### Shared errors and verification
 
@@ -977,6 +983,143 @@ Tests: [HumanAiMySqlTest](backend/src/test/java/com/relay/engine/HumanAiMySqlTes
 (shared auth/CORS). Exact executed commands and outcomes are in
 [Phase5 verification](docs/phase5-verification.txt). This does not claim a finished approvals
 console or run trace API; those remain Phase6.
+
+## Run visibility — task6.1
+
+- **Status:** Implemented and verified (2026-09-28): list/detail/paging in task6.1; trace payload fields and redaction added to `GET /runs/{runId}` in task6.2 (additive — no 6.1 field was removed or renamed). See "Trace payload and redaction — task6.2" below.
+- **Requirement/source:** Fixed `GET /runs/{runId}` (status plus `steps[]` with `node_id`/`status`; smoke test polls it); flexible run listing required by the pack's "additional flows" and console views U03/U04 ([console design](docs/CONSOLE.md)).
+- **Authentication:** `Authorization: Bearer <RELAY_DEMO_TOKEN>` on both routes; missing, malformed, duplicate or wrong tokens return401 with the shared security envelope. There are no per-run permissions: the single demo operator can read every run.
+- **Headers/body:** GET only; no request body or Content-Type is used. Reads have no side effects, no locks and no idempotency concerns; repeat freely.
+- **Unknown or repeated query parameters** return400 `invalid_input` (for example `?page=2`, `?status=queued&status=failed`, or `limit` on the detail route). An **empty** value (`?status=`) means "not supplied", matching how forms submit cleared filters.
+- **Never exposed:** webhook secrets, the frozen definition snapshot, execution policy, frozen dispatch requests and AI request bodies. Trigger input and step payloads are returned only after redaction (task6.2). Response bodies are safe DTOs, never JPA entities.
+
+### GET /runs
+
+Lists runs newest first, ordered by `created_at DESC, run_id DESC` (the ID breaks timestamp ties). Filtering and paging happen in the database, not on the current page.
+
+| Query | Type / default | Rules |
+| --- | --- | --- |
+| `workflow_id` | string, optional | Exact match; 1–128 Unicode code points, else400. An unknown workflow returns an empty page (200), not404. |
+| `status` | string, optional | Exactly one of `queued`, `running`, `waiting_approval`, `succeeded`, `failed`, `cancelled`; anything else (including case variants) →400. |
+| `limit` | integer, default25 | 1–100 inclusive; decimal digits only; otherwise400. |
+| `cursor` | string, optional | Opaque `next_cursor` from a previous response with the **same filters**. Malformed, non-canonical, over-long or out-of-range cursors →400. Do not construct or parse cursors. |
+
+```sh
+curl -H "Authorization: Bearer $RELAY_DEMO_TOKEN" 'http://localhost:8080/runs?workflow_id=wf_expense_approval&status=waiting_approval&limit=25'
+curl -H "Authorization: Bearer $RELAY_DEMO_TOKEN" "http://localhost:8080/runs?workflow_id=wf_expense_approval&limit=25&cursor=$NEXT_CURSOR"
+```
+
+HTTP200 (IDs/times illustrative):
+```json
+{"runs":[{"run_id":"run_example2","workflow_id":"wf_expense_approval","status":"waiting_approval","trigger_type":"manual","current_node_id":"approve_large","steps_executed":2,"created_at":"2026-09-28T10:00:02.123456Z","started_at":"2026-09-28T10:00:02.300000Z","finished_at":null}],
+ "next_cursor":"MTc1OTA1MzYwMjEyMzQ1NjpydW5fZXhhbXBsZTI"}
+```
+
+Each item has exactly these nine fields: strings `run_id`, `workflow_id`, `status`, `trigger_type` (`manual`/`webhook`); nullable string `current_node_id` (next/active node; null once finished at an end node); integer `steps_executed`; UTC ISO8601 `created_at` and nullable `started_at`/`finished_at` (null means not started/not finished). `next_cursor` is null on the last page — including when the final page is exactly full. No total count is provided.
+
+**Continuation semantics:** keyset paging from the last returned row. Runs accepted after the first page are newer than the cursor, so they never appear in or shift later pages; reload the first page (no cursor) to see them. A run's status can change between page reads, so a status-filtered walk reflects each page's read time. Runs are never deleted, so pages have no gaps.
+
+### GET /runs/{runId}
+
+Returns one run with its logical steps ordered by `sequence`. Run fields and the step page are read in one read-only transaction, so they describe one consistent moment.
+
+| Query | Type / default | Rules |
+| --- | --- | --- |
+| `steps_after` | integer, default0 | Return steps with `sequence` greater than this; 0–18 decimal digits, otherwise400. |
+| `steps_limit` | integer, default500 | 1–500 inclusive, otherwise400. |
+
+Because `limits.max_steps` may be as large as 2147483647, steps are paged rather than silently truncated. Runs within the default page (500 steps, which covers every seed workflow) are complete in one response. When `steps_next_after` is non-null, request again with `steps_after=<that value>` until it is null.
+
+```sh
+curl -H "Authorization: Bearer $RELAY_DEMO_TOKEN" "http://localhost:8080/runs/$RUN_ID"
+curl -H "Authorization: Bearer $RELAY_DEMO_TOKEN" "http://localhost:8080/runs/$RUN_ID?steps_after=500&steps_limit=500"
+```
+
+HTTP200 for a run stopped by the step cap (IDs/times illustrative):
+```json
+{"run_id":"run_example","workflow_id":"wf_runaway","status":"failed","trigger_type":"manual","current_node_id":"b",
+ "steps_executed":5,"max_steps":5,"created_at":"2026-09-28T10:00:00.000001Z","started_at":"2026-09-28T10:00:00.100000Z","finished_at":"2026-09-28T10:00:01.200000Z",
+ "error":{"code":"max_steps","node_id":"b"},"cancel_requested_at":null,"cancel_requested_by":null,"cancellation_reason":null,
+ "steps":[{"sequence":1,"node_id":"a","node_type":"delay","status":"succeeded","wait_reason":null,"attempt_count":1,"selected_next_node_id":"b","resume_at":"2026-09-28T10:00:00.100001Z","started_at":"2026-09-28T10:00:00.100000Z","finished_at":"2026-09-28T10:00:00.150000Z","duration_ms":50}],
+ "steps_next_after":null}
+```
+
+Run fields: the nine list fields plus nullable integer `max_steps` (from the run's frozen snapshot, so later workflow edits do not change it); nullable `error` object `{code, node_id}` for engine-terminated runs (for example `max_steps`, and the node that could not be admitted); `cancel_requested_at`, `cancel_requested_by` (`demo-operator`) and `cancellation_reason` (`operator_cancelled` or `approval_rejected`), all null when not cancelled; `steps` and `steps_next_after`.
+
+Step fields: `sequence` (positive, gap-free per run; loop visits get new sequences), `node_id`, `node_type`, `status` (`running`, `waiting`, `succeeded`, `failed`, `cancelled`), nullable `wait_reason` (`delay`, `retry`, `approval`; only while waiting), `attempt_count` (prepared handler invocations for this visit, including retries, schema repair and crash recovery; every executed node has at least1, a delay wake-up or approval decision does not add one, and0 only means the first invocation has not been prepared), nullable `selected_next_node_id` (the branch actually taken; null at an end node or when unfinished), nullable `resume_at`, `started_at`, `finished_at`, `duration_ms`. A queued run returns `"steps":[]`.
+
+Polling: the run is asynchronous after trigger acceptance; poll this route until `status` is `succeeded`, `failed` or `cancelled`. `waiting_approval` does not change until a human decision or cancellation.
+
+### Trace payload and redaction — task6.2
+
+`GET /runs/{runId}` additionally returns (all nullable unless stated):
+
+| Level | Field | Meaning |
+| --- | --- | --- |
+| run | `workflow_name`, `entry` | From the run's frozen snapshot, so later draft edits never change the trace's labels. |
+| run | `input` | Trigger input (manual `input` object or webhook body), redacted. |
+| run | `ai_tokens_used`, `ai_usage_complete` (boolean) | Known prompt+completion total across AI attempts; `false` means some usage is unknown (e.g. a crashed call). Null is "unknown", not zero. |
+| step | `resolved_input` | Parameters after template resolution, redacted. Null = not resolved yet. |
+| step | `output` | Successful output (redacted); approval steps show `{"decision","decided_by"}`. |
+| step | `error` | Engine error object, e.g. `{"code":"http_503","cause":"transport_retry","retry_number":1,"delay_ms":1000}` or `{"code":"max_steps","node_id":"b","prepared_attempts":0}`. |
+| step | `idempotency_key` | Engine-generated `run_id:sequence` key for non-GET external actions; stable across retries, new per loop visit. |
+| step | `ai_repair_count` (0–1), `tokens_prompt`, `tokens_completion`, `ai_usage_complete` (boolean) | AI schema-repair use and per-step usage. |
+| step | `retry_due_at` | When `wait_reason` is `retry`, the scheduled next attempt time. |
+| step | `approval` | Object `{id,status,message,decided_by,decided_at,closed_at,close_reason}` for approval steps, else null. `closed` with `close_reason` `run_cancelled` means cancellation closed it — not a rejection. |
+| step | `attempts[]` | Ordered by `attempt_no`: `status` (`running`, `succeeded`, `failed`, `uncertain` = remote outcome unknown), `cause` (`initial`, `transport_retry`, `schema_repair`, `recovery`), redacted `error`/`output`, `provider`/`model` (AI only), `tokens_prompt`/`tokens_completion`, `started_at`, `finished_at`, `duration_ms` (null while running/uncertain). Invalid AI text is not retained, so a failed schema attempt has an error code and null output. |
+
+Example step (illustrative):
+```json
+{"sequence":1,"node_id":"call","node_type":"http_request","status":"waiting","wait_reason":"retry","attempt_count":1,
+ "resolved_input":{"method":"POST","url":"http://127.0.0.1:9210/x?api_key=[REDACTED]&ok=1","headers":{"X-Api-Key":"[REDACTED]","X-Trace":"visible"},"body":{"note":"echo [REDACTED]"}},
+ "output":null,"error":{"code":"http_503","cause":"transport_retry","retry_number":1,"delay_ms":1000},
+ "idempotency_key":"run_example:1","ai_repair_count":0,"tokens_prompt":null,"tokens_completion":null,"ai_usage_complete":true,
+ "retry_due_at":"2026-09-28T10:00:01.000000Z","approval":null,
+ "attempts":[{"attempt_no":1,"status":"failed","cause":"initial","error":{"code":"http_503","cause":"transport_retry","retry_number":1,"delay_ms":1000},"output":null,"provider":null,"model":null,"tokens_prompt":null,"tokens_completion":null,"started_at":"2026-09-28T10:00:00.000100Z","finished_at":"2026-09-28T10:00:00.020000Z","duration_ms":19}]}
+```
+
+**Redaction rules** (applied to `input`, `resolved_input`, `output`, `error`, attempt `error`/`output` and approval `message`; the stored data is unchanged):
+1. Any object key whose lowercase, letters-and-digits-only form contains `authorization`, `secret`, `token`, `password`, `passwd`, `apikey`, `cookie`, `credential`, `privatekey` or `signature` has its whole value replaced by `"[REDACTED]"` at any depth (e.g. `X-Api-Key`, `client_secret`, `session_token`). This deliberately over-redacts user keys such as `token_count`.
+2. The run's webhook secret, when at least 8 characters, is replaced by `[REDACTED]` wherever it appears inside strings (e.g. if a caller echoes it into the body). Shorter secrets are only protected by rule 1 and by never returning the snapshot.
+3. Absolute `http(s)` URL strings lose user-info and have sensitive query-parameter values (same name rule) replaced.
+The engine already rejects workflow `Authorization`/`Cookie` headers, and AI provider credentials are never stored in traces.
+
+Limits: a step page (≤500 steps) returns all attempts for those steps; attempts per step are bounded by the retry budget. Large outputs (up to the engine's payload limit) are returned in full; use smaller `steps_limit` pages for very large traces.
+
+| 6.2 case | Input / action | Expected | Test | Actual (2026-09-28) |
+| --- | --- | --- | --- | --- |
+| HTTP retry trace | `http_request` with `X-Api-Key` header, `api_key` query, secret echoed in webhook body; 503 retryable outcome | Header/query/secret redacted; `X-Trace` visible; waiting `retry` with `retry_due_at`; failed attempt with `http_503`; idempotency key `run:1`; no dispatch request | RunQueryMySqlTest.traceIncludesRedactedPayloadAttemptsUsageAndApprovalEvidence | Pass |
+| AI + approval | Mock-http AI outcome with 7+3 tokens and a `session_token` field, then approval approved | Output redacted field; step/attempt tokens, provider/model; run total 10 complete; approval evidence with decider/time and rendered message | same | Pass |
+| Queued run | Fresh run with sensitive input key | Input shown redacted, zero tokens, no steps | same | Pass |
+| Loop steps | 6.1 loop | Every step has one attempt, resolved input and output (`{}` delay, `{"result":false}` condition) | detailReturnsCompleteOrderedStepsAcrossPages | Pass |
+| Redaction unit rules | Key variants, non-sensitive keys, nesting, arrays, immutability, secret substrings, short secrets, URLs, malformed escapes | As rules above | [TraceRedactorTest](backend/src/test/java/com/relay/api/TraceRedactorTest.java) | Pass |
+
+### Errors, edge cases and tests
+
+| Status | Code | Condition |
+| --- | --- | --- |
+| 400 | invalid_input | Invalid/unknown/repeated query parameter, bad limit, status or cursor. Validated before lookup, so a bad parameter on a missing run is400. |
+| 401 | unauthorized | Missing/invalid management bearer token |
+| 404 | not_found | No run with this ID (including IDs longer than 128 code points) |
+| 500 | internal_error | Unexpected storage failure; no raw exception text is returned |
+
+| Case | Input / action | Expected result | Test | Actual (2026-09-28) |
+| --- | --- | --- | --- | --- |
+| Authentication | No token, wrong token, Basic scheme on both routes | 401 | RunQueryMySqlTest.routesRequireManagementAuthentication | Pass |
+| Ordering and ties | Five runs across two workflows, two forced to identical `created_at` | Matches `created_at DESC, run_id DESC` exactly | listFiltersAndPagesStablyServerSide | Pass |
+| Filters | workflow only; workflow+status (cancelled, queued); unknown workflow; empty status | Exact subsets; unknown → `{"runs":[],"next_cursor":null}`; empty = unfiltered | same | Pass |
+| Paging | limit1 walk; limit equal to count | Complete, disjoint, ordered; exact-fit page has null cursor | same | Pass |
+| Concurrent insert | New run accepted between page 1 and page 2 | Page 2 continues without duplicate/shift; new run appears on a fresh first page | same | Pass |
+| Invalid list input | limit 0/101/x, status `pending`, repeated status, bad/garbage/far-future cursor, unknown param, 129-char workflow | 400 `invalid_input` | same + RunQueryTest | Pass |
+| Queued detail | Run not yet claimed | `steps: []`, `steps_next_after: null`, `max_steps` from snapshot, `current_node_id` = entry | detailReturnsCompleteOrderedStepsAcrossPages | Pass |
+| Loop + cap | delay→condition loop with `max_steps` 5 | `failed`, `error.code` `max_steps`, steps a,b,a,b,a with sequences 1–5 and chosen branch | same | Pass |
+| Step paging | `steps_limit=2` walk; `steps_after=5`; `steps_limit=5` | Every step exactly once; empty after end; exact fit has null continuation | same | Pass |
+| Waiting/cancelled | Approval run, then cancel | `waiting`/`approval` step with null `finished_at`; after cancel: run and step `cancelled`, requester `demo-operator`, reason `operator_cancelled` | same | Pass |
+| Missing run | Unknown ID; 129-character ID | 404 `not_found` | same | Pass |
+| Invalid detail input | steps_limit 0/501, steps_after -1/x, `limit` on detail; bad param on missing run | 400 `invalid_input` | same + RunQueryTest | Pass |
+| No secret/snapshot leakage | Webhook secret and sentinel input in every tested response | Not present; no `definition_snapshot`/`execution_policy` keys | every `ok()` call | Pass |
+
+Tests: [RunQueryMySqlTest](backend/src/test/java/com/relay/api/RunQueryMySqlTest.java) (real HTTP, MySQL Testcontainers) and [RunQueryTest](backend/src/test/java/com/relay/api/RunQueryTest.java) (cursor codec and parameter boundaries). Commands and outcomes: [Phase6 verification](docs/phase6-verification.txt). Queries use existing indexes `ix_runs_created`, `ix_runs_workflow`, `ix_runs_status` and the steps primary key; no schema change.
 
 ## AI execution — Phase5, worker-only
 

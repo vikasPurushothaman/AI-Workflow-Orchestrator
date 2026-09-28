@@ -1003,8 +1003,8 @@ RELAY_MODE=worker java -jar build/libs/relay-backend-0.1.0.jar
 The worker is non-web, polls MySQL, and does not require the management demo token.
 Only one worker process is supported; stop it before launching another. The API needs its
 existing token. Use the manual/hook examples in [API documentation](../API_DOCUMENTATION.md)
-to receive202 and a run ID. The frontend still has placeholder domain pages and there is
-no run-read endpoint yet; inspect the owned test reports or local database for status/trace:
+to receive202 and a run ID. Since Phase6, follow runs with `GET /runs/{runId}` or the console
+(see [console demo](CONSOLE_DEMO.md)); the SQL below remains useful for low-level diagnosis:
 
 ```sql
 SELECT run_id,status,steps_executed,error FROM runs ORDER BY created_at DESC;

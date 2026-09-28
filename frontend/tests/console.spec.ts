@@ -11,7 +11,7 @@ for (const [path, title] of [
     page.on('request', request => { if (/^\/(workflows|runs|approvals)(\/|\?|$)/.test(new URL(request.url()).pathname)) apiRequests.push(request.url()); });
     await page.goto(path);
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeFocused();
-    await expect(page.getByText('This view is not connected yet')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Connect to view data' })).toBeVisible();
     await page.reload();
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
     expect(errors).toEqual([]);
@@ -40,7 +40,8 @@ test('320px layout and escaped long ID', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 720 });
   const id = '<script>alert(1)</script>' + 'x'.repeat(150);
   await page.goto('/console/workflows/' + encodeURIComponent(id));
-  await expect(page.getByText('Requested ID:', { exact: false })).toContainText(id);
+  await expect(page.getByRole('heading', { name: 'Workflow detail', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.querySelectorAll('script:not([type="module"])').length)).toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await expect(page.getByRole('link', { name: 'Approvals', exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/console-mobile.png', fullPage: true });
@@ -80,7 +81,7 @@ for (const status of [401, 404]) {
     await page.goto('/console/workflows');
     await page.getByLabel('Management token').fill('browser-test-token');
     await page.getByRole('button', { name: 'Connect', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText(status === 401 ? 'not accepted' : 'not available');
+    await expect(page.getByRole('status')).toContainText(status === 401 ? 'not accepted' : 'not found');
     await expect(page.getByLabel('Management token')).toBeFocused();
     await expect(page.getByRole('button', { name: 'Disconnect' })).toHaveCount(0);
   });
